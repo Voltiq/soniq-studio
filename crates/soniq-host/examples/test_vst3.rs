@@ -185,7 +185,7 @@ impl IAudioProcessorTrait for TestPlugin {
     }
 
     unsafe fn canProcessSampleSize(&self, size: i32) -> tresult {
-        if size == SymbolicSampleSizes_::kSample32 { kResultOk } else { kNotImplemented }
+        if size == SymbolicSampleSizes_::kSample32 as _ { kResultOk } else { kNotImplemented }
     }
 
     unsafe fn getLatencySamples(&self) -> u32 {
