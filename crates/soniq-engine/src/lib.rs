@@ -333,6 +333,22 @@ impl AudioEngine {
     }
 
     /// Hands the input to the audio thread for monitoring (`None` stops it).
+    /// Sends the output of the effect `device` to the returned queue (mono),
+    /// for a live spectrum in its panel; `None` stops the tap.
+    pub fn set_tap(&self, device: Option<String>) -> Option<rtrb::Consumer<f32>> {
+        match device {
+            Some(id) => {
+                let (producer, consumer) = rtrb::RingBuffer::<f32>::new(32_768);
+                let _ = self.send(Control::Tap(Some(Box::new((id, producer)))));
+                Some(consumer)
+            }
+            None => {
+                let _ = self.send(Control::Tap(None));
+                None
+            }
+        }
+    }
+
     pub fn set_monitor(&self, feed: Option<MonitorFeed>) {
         let _ = self.send(Control::Monitor(feed.map(Box::new)));
     }

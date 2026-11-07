@@ -151,6 +151,10 @@ Releases are built by GitHub Actions from a version tag: see [RELEASING.md](RELE
   reverb, normalize, loudness, a drawn filter curve, Auto Duck and more; Repair redraws a click or a
   dropout, and Duplicate or Split New (`Ctrl+Alt+I`) puts the selection on a new track. Generate makes
   tones, sweeps, noise, DTMF, rhythm tracks and silence.
+- **Analyze.** Plot the spectrum of a selection (frequency, note and level under the pointer), check
+  speech against its background for WCAG contrast (20 dB), and mark clipping, beats or separate sounds
+  on the timeline. Compressors, gates, glue, limiters and de-essers show their gain reduction live, and
+  the EQ draws a live spectrum of what it puts out behind its curve.
 - **Macros and batch.** Run a chain of effects on a clip, or on a whole folder of files
   (File › Batch process files). Five macros are built in, Fix my audio among them; make your own.
 - **Export.** `Ctrl+Shift+E` renders the song, the loop region, each region or each track (stems: each

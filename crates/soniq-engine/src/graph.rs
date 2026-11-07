@@ -431,6 +431,30 @@ pub struct FxNode {
     pub sidechain: Option<usize>,
     /// Its parameter values, which automation and modulators change.
     pub bank: ParamBank,
+    /// Gain reduction (dB) for the device's meter, on dynamics effects.
+    pub meter: Option<Arc<PeakMeter>>,
+    /// Its output, for a live spectrum in its panel: the device id and the queue.
+    pub tap: Option<Box<(String, rtrb::Producer<f32>)>>,
+}
+
+impl FxNode {
+    pub fn new(id: String, fx: AudioFx, sidechain: Option<usize>, bank: ParamBank) -> Self {
+        Self { id, fx, sidechain, bank, meter: None, tap: None }
+    }
+
+    /// After processing a block: the meter reads its gain reduction, the tap its output.
+    pub(crate) fn after(&mut self, left: &[f32], right: &[f32]) {
+        if let (Some(meter), Some(db)) = (&self.meter, self.fx.reduction()) {
+            meter.update(db, 0.0);
+        }
+        if let Some(tap) = self.tap.as_mut()
+            && tap.1.slots() >= left.len()
+        {
+            for (l, r) in left.iter().zip(right) {
+                let _ = tap.1.push(0.5 * (l + r));
+            }
+        }
+    }
 }
 
 /// Samples between automation and modulator updates.
@@ -573,6 +597,8 @@ pub(crate) fn adopt_chain(new: &mut [FxNode], old: &mut [FxNode]) {
     for node in new {
         if let Some(was) = old.iter_mut().find(|o| o.id == node.id) {
             node.fx.adopt(&mut was.fx);
+            // A live spectrum stays on its device.
+            node.tap = was.tap.take();
         }
     }
 }
@@ -823,6 +849,15 @@ pub struct Graph {
 }
 
 impl Graph {
+    /// Every effect: on the tracks, the returns and the master.
+    pub fn fx_nodes_mut(&mut self) -> impl Iterator<Item = &mut FxNode> {
+        self.tracks
+            .iter_mut()
+            .flat_map(|t| t.fx.iter_mut())
+            .chain(self.returns.iter_mut().flat_map(|r| r.fx.iter_mut()))
+            .chain(self.master_fx.iter_mut())
+    }
+
     pub fn new(tracks: Vec<TrackNode>, master_gain: f32) -> Self {
         Self {
             tracks,

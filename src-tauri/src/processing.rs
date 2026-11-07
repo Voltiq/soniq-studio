@@ -57,6 +57,95 @@ fn duck_control(state: &AppState, clip: &str, effects: &[Effect], source: &ClipA
     Ok(Some(audio))
 }
 
+// ---------- Analyze ----------
+
+/// The averaged spectrum of the selection (or the whole clip), `size` points per window.
+#[tauri::command]
+pub async fn clip_spectrum_plot(state: State<'_, AppState>, clip: String, start: Option<f64>, end: Option<f64>, size: usize) -> CmdResult<soniq_io::SpectrumPlot> {
+    let source = clip_audio(&state, &clip)?;
+    let range = source.range(start, end, false);
+    soniq_io::plot_spectrum(&soniq_io::extract(&source.native, range), size)
+}
+
+/// The RMS level of a stretch of a clip, in dBFS: one side of a contrast check.
+#[tauri::command]
+pub async fn clip_level(state: State<'_, AppState>, clip: String, start: f64, end: f64) -> CmdResult<f64> {
+    let source = clip_audio(&state, &clip)?;
+    let range = source.range(Some(start), Some(end), false);
+    if range.is_empty() {
+        return Err("Select some audio first.".into());
+    }
+    Ok(soniq_io::rms_db(&soniq_io::extract(&source.native, range)))
+}
+
+/// What to find and mark.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum MarkKind {
+    /// Stretches at full scale (0.99 or more for 3 samples or longer).
+    Clipping,
+    /// Where each beat or hit starts; `sensitivity` 0–1.
+    Beats { sensitivity: f64 },
+    /// Sounds between silences.
+    Sounds { threshold: f64, min_silence: f64, min_sound: f64 },
+}
+
+/// Finds clipping, beats or sounds in the selection (or the whole clip) and
+/// marks them on the timeline: regions for stretches, markers for beats. One undo step.
+#[tauri::command]
+pub async fn clip_mark(state: State<'_, AppState>, clip: String, start: Option<f64>, end: Option<f64>, kind: MarkKind) -> CmdResult<ProjectReply> {
+    let source = clip_audio(&state, &clip)?;
+    let range = source.range(start, end, false);
+    let audio = soniq_io::extract(&source.native, range.clone());
+    let (found, name): (Vec<(usize, Option<usize>)>, &str) = match &kind {
+        MarkKind::Clipping => (soniq_io::find_clipping(&audio, 0.99, 3).into_iter().map(|(a, b)| (a, Some(b))).collect(), "Clipped"),
+        MarkKind::Beats { sensitivity } => (
+            soniq_io::onsets(&audio, sensitivity.clamp(0.0, 1.0) as f32, 4096).into_iter().filter(|&f| f > 0).map(|f| (f, None)).collect(),
+            "Beat",
+        ),
+        MarkKind::Sounds { threshold, min_silence, min_sound } => {
+            (soniq_io::label_sounds(&audio, *threshold, *min_silence, *min_sound).into_iter().map(|(a, b)| (a, Some(b))).collect(), "Sound")
+        }
+    };
+    let rate = f64::from(source.native.sample_rate);
+    let mut session = lock(&state.session);
+    let session = &mut *session;
+    if found.is_empty() {
+        let mut reply = state.reply(session);
+        reply.note = Some(match kind {
+            MarkKind::Clipping => "No clipping found".into(),
+            MarkKind::Beats { .. } => "No beats found: try a higher sensitivity".into(),
+            MarkKind::Sounds { .. } => "No sounds above the threshold".into(),
+        });
+        return Ok(reply);
+    }
+    let (ti, ci) = session.project.find_clip(&clip).ok_or("That clip no longer exists.")?;
+    let c = session.project.tracks[ti].clips[ci].clone();
+    let tempo = session.project.tempo_map();
+    let beat = |frame: usize| c.beat_after(&tempo, c.start, (range.start + frame) as f64 / rate - source.offset);
+    let before = session.project.clone();
+    let count = found.len();
+    for (i, (a, b)) in found.into_iter().enumerate() {
+        let label = if matches!(kind, MarkKind::Sounds { .. }) { format!("{name} {}", i + 1) } else { name.to_string() };
+        session.project.markers.push(soniq_project::Marker { id: new_id("m"), name: label, start: beat(a), end: b.map(beat) });
+    }
+    session.project.markers.sort_by(|a, b| a.start.total_cmp(&b.start));
+    let what = match kind {
+        MarkKind::Clipping => "Find clipping",
+        MarkKind::Beats { .. } => "Beat finder",
+        MarkKind::Sounds { .. } => "Label sounds",
+    };
+    session.history.record(before, what, None);
+    session.mark_changed();
+    let mut reply = state.reply(session);
+    reply.note = Some(match kind {
+        MarkKind::Clipping => format!("Marked {count} clipped {}", if count == 1 { "stretch" } else { "stretches" }),
+        MarkKind::Beats { .. } => format!("Marked {count} {}", if count == 1 { "beat" } else { "beats" }),
+        MarkKind::Sounds { .. } => format!("Marked {count} {}", if count == 1 { "sound" } else { "sounds" }),
+    });
+    Ok(reply)
+}
+
 /// Redraws a short damaged stretch (a click, a dropout) from the sound around it.
 #[tauri::command]
 pub async fn clip_repair(state: State<'_, AppState>, clip: String, start: f64, end: f64) -> CmdResult<ProjectReply> {

@@ -9,6 +9,7 @@ import { MissingFilesDialog } from "./components/MissingFilesDialog";
 import { WelcomeScreen } from "./components/WelcomeScreen";
 import { PodcastPanel } from "./components/PodcastPanel";
 import { AboutDialog } from "./components/AboutDialog";
+import { AnalyzeDialog } from "./components/AnalyzeDialog";
 import { SketchMode } from "./components/SketchMode";
 import { BrowserPanel } from "./components/BrowserPanel";
 import { CommandPalette } from "./components/CommandPalette";
@@ -184,7 +185,7 @@ function useShortcuts() {
     const onKey = (e: KeyboardEvent) => {
       const s = useStore.getState();
       // Dialogs handle their own keys.
-      if (s.paletteOpen || s.settingsOpen || s.exportOpen || s.effectDialog || s.generatorOpen || s.macroDialog || s.noteTool || s.welcomeOpen || s.missingOpen || s.sketchOpen || s.aboutOpen) return;
+      if (s.paletteOpen || s.settingsOpen || s.exportOpen || s.effectDialog || s.generatorOpen || s.macroDialog || s.noteTool || s.welcomeOpen || s.missingOpen || s.sketchOpen || s.aboutOpen || s.analyzeDialog) return;
       const target = e.target as HTMLElement | null;
       const isRange = target instanceof HTMLInputElement && target.type === "range";
       const typing = !isRange && !!target?.closest("input, textarea, select, [contenteditable='true']");
@@ -414,6 +415,7 @@ export default function App() {
       {welcomeOpen && <WelcomeScreen />}
       {sketchOpen && <SketchMode />}
       <AboutDialog />
+      <AnalyzeDialog />
       <LessonCard />
       <Toasts />
     </div>

@@ -41,6 +41,7 @@ import {
   type ExportReport,
   type ChaptersFile,
   type FadeCurve,
+  type MarkKind,
   type TrackRole,
   type BatchOutput,
   type BatchProgress,
@@ -190,6 +191,8 @@ export interface Store {
   density: Density;
   /** Podcast mode's panel: speakers, ducking, chapters. */
   podcastOpen: boolean;
+  /** Analyze › Plot spectrum or Contrast. */
+  analyzeDialog: "spectrum" | "contrast" | null;
   exportPreset: ExportPreset | null;
   /** Sketch mode: one big record button and a loop. */
   sketchOpen: boolean;
@@ -344,6 +347,9 @@ export interface Store {
   startupChecks(): Promise<void>;
   setAppearance(patch: Partial<Appearance>): void;
   togglePodcast(): void;
+  setAnalyzeDialog(mode: "spectrum" | "contrast" | null): void;
+  /** Finds clipping, beats or sounds in the selection (or clip) and marks them. */
+  markFound(kind: MarkKind): Promise<void>;
   setTrackRole(id: string, role: TrackRole): void;
   levelSpeakers(tracks: string[], target: number): Promise<void>;
   duckMusic(music: string[], speakers: string[], depth: number): Promise<void>;
@@ -743,6 +749,7 @@ export const useStore = create<Store>((set, get) => {
     colorSet: readPref("colorSet", COLOR_SETS.map((c) => c.id), "graphiq"),
     density: readPref<Density>("density", ["comfortable", "compact"], "comfortable"),
     podcastOpen: false,
+    analyzeDialog: null,
     exportPreset: null,
     sketchOpen: false,
     sketchBars: Number(readPref("sketchBars", ["1", "2", "4", "8"], "4")),
@@ -1092,6 +1099,26 @@ export const useStore = create<Store>((set, get) => {
     },
 
     togglePodcast: () => set((s) => ({ podcastOpen: !s.podcastOpen })),
+
+    setAnalyzeDialog: (analyzeDialog) => {
+      if (analyzeDialog && !editorTarget(get())) {
+        pushToast({ tone: "info", title: "Open an audio clip first", detail: "Select an audio clip (or open it in the audio editor) to analyse it." });
+        return;
+      }
+      set({ analyzeDialog });
+    },
+
+    markFound: async (kind) => {
+      const s = get();
+      const target = editorTarget(s);
+      if (!target) {
+        pushToast({ tone: "info", title: "Select an audio clip first" });
+        return;
+      }
+      const sel = selectionOf(s);
+      const reply = await withReply("Listening…", () => backend.clipMark(target.clip.id, sel?.start, sel?.end, kind), "Could not analyse the clip");
+      if (reply) pushToast({ tone: "success", title: reply.note ?? "Done", detail: reply.note?.startsWith("Marked") ? "On the marker lane above the tracks; Undo takes them away." : undefined });
+    },
 
     setAboutOpen: (aboutOpen) => set({ aboutOpen }),
 

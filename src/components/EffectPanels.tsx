@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { EQ_BANDS, bandResponse, eqBands, eqResponse, hasGain } from "../state/eqCurve";
+import { engine } from "../engine/bridge";
+import { deviceReduction, deviceSpectrum } from "../state/meters";
 import { useStore } from "../state/store";
 import type { Device } from "../state/types";
 import { ParamControl, paramOf, type Owner } from "./DeviceControls";
@@ -31,6 +33,62 @@ const round3 = (f: number) => {
  * over it for Q, double-click it to switch it off, double-click empty space
  * to add a band there. The selected band's controls sit underneath.
  */
+/** How far a dynamics device turns the sound down, live: a bar and the dB. */
+export function ReductionMeter({ id }: { id: string }) {
+  const bar = useRef<HTMLSpanElement>(null);
+  const text = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    let raf = 0;
+    let shown = "";
+    const loop = () => {
+      const db = deviceReduction.get(id) ?? 0;
+      if (bar.current) bar.current.style.width = `${Math.min(100, (db / 24) * 100).toFixed(1)}%`;
+      const label = db >= 0.1 ? `−${db.toFixed(1)}` : "0.0";
+      if (text.current && label !== shown) text.current.textContent = shown = label;
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [id]);
+  return (
+    <span className="gr-meter" title="Gain reduction: how far it turns the sound down right now (dB)">
+      <span className="gr-label">GR</span>
+      <span className="gr-well">
+        <span ref={bar} className="gr-fill" />
+      </span>
+      <span ref={text} className="gr-db mono">
+        0.0
+      </span>
+    </span>
+  );
+}
+
+/** What the EQ puts out, live, behind its curve (while the panel is open). */
+function LiveSpectrum({ id }: { id: string }) {
+  const area = useRef<SVGPathElement>(null);
+  useEffect(() => {
+    void engine.deviceSpectrum(id);
+    let raf = 0;
+    const loop = () => {
+      const bands = deviceSpectrum.id === id ? deviceSpectrum.bands : [];
+      if (area.current) {
+        if (bands.length) {
+          // −84 dB at the bottom of the plot, 0 dB at the top.
+          const pts = bands.map((db, k) => `${xOf(20 * 2 ** (k / 6)).toFixed(1)},${(H * (1 - clamp((db + 84) / 84, 0, 1))).toFixed(1)}`);
+          area.current.setAttribute("d", `M0,${H} L${pts.join(" L")} L${W},${H} Z`);
+        } else area.current.setAttribute("d", "");
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(raf);
+      void engine.deviceSpectrum(null);
+    };
+  }, [id]);
+  return <path ref={area} className="eq-spectrum" />;
+}
+
 export function EqEditor({ track, device }: { track: Owner; device: Device }) {
   const setParam = useStore((s) => s.setParam);
   const bands = eqBands(device);
@@ -97,6 +155,7 @@ export function EqEditor({ track, device }: { track: Owner; device: Device }) {
           {GRID.map((f) => (
             <line key={f} x1={xOf(f)} x2={xOf(f)} y1={0} y2={H} className="eq-grid" />
           ))}
+          {device.on && <LiveSpectrum id={device.id} />}
           {[-12, 12].map((db) => (
             <line key={db} x1={0} x2={W} y1={yOf(db)} y2={yOf(db)} className="eq-grid" />
           ))}

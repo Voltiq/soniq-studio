@@ -215,7 +215,7 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 - [x] **P0** Effects: EQ filter curve, Repair, Auto Duck (Phase 7B)
 - [x] **P0** Generators: tone and chirp (sine, square, sawtooth, triangle, band-limited), noise (white, pink, brown), DTMF, silence; into the clip at the cursor or as a new clip at the playhead
 - [x] **P0** Generators: rhythm track (Phase 7B)
-- [ ] **P0** Analysis: plot spectrum, contrast (WCAG audio), find clipping, beat finder, label sounds
+- [x] **P0** Analysis: plot spectrum, contrast (WCAG audio), find clipping, beat finder, label sounds (Analyze menu; Phase 7 Part C)
 - [x] **P0** Preview for every effect: up to 10 s of the selection is processed and played through the engine, without changing anything
 - [ ] **P1** Real-time (non-destructive) effect stacks on clips
 - [x] **P1** Spectrogram view (log, mel or linear) with time-and-frequency selection and spectral editing: delete a band, lower it by 12 dB, or keep only the band
@@ -259,7 +259,8 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 ### 5.8 Effects (built-in, all real-time)
 - [x] **P0** Device chain UI with on/off switch, knobs, add from the browser and remove (UI)
 - [x] **P0** EQ (8 bands: cuts at 24 dB/oct, shelves, bells, notches; a curve editor), compressor (soft knee, dry/wet, sidechain), gate (hold, range, sidechain), limiter (no look-ahead, so no latency), reverb (algorithmic, with pre-delay and damping), delay (free or synced, ping-pong, filtered feedback), chorus, flanger and phaser, saturator (soft, hard, tube), utility (gain, pan, width, mono, phase), and an auto filter
-- [ ] **P0** Effects still to come: linear-phase EQ, a spectrum analyser in the EQ, gain-reduction meters on the dynamics
+- [x] **P0** A live spectrum in the EQ, gain-reduction meters on the compressor, gate, glue, limiter and de-esser (Phase 7 Part C)
+- [ ] **P0** Effects still to come: linear-phase EQ
 - [x] **P1** Glue (bus) compressor (fixed ratios and attacks, auto release, range, clip), three-band multiband dynamics (Linkwitz-Riley crossovers that sum flat), de-esser (turns down the highs only or the whole signal; listen to what it hears), transient shaper, auto-pan (free or synced, three shapes, phase), redux (bit depth and sample-rate reduction), convolution reverb (five synthetic spaces, FFT convolution), pitch shifter (±24 semitones, two crossfading taps) and a vocoder (8–24 bands, formant shift; noise, saw or another track as the carrier); auto-filter came in phase 4A
 - [ ] **P1** Effects still to come: convolution with your own impulse responses, a fourth multiband band and per-band solo
 - [ ] **P1** Audio effect racks (parallel chains, macros), dry/wet on every device
@@ -544,9 +545,15 @@ Every P0 item the earlier phases left open, so nothing a first-time user leans o
 - [x] Rust tests (237 in total) now also cover moving, deleting and duplicating several clips, ripple (one gap, two gaps, duplicate, trim), Duplicate and Split New, fade shapes saved and cleared, Repair (rms error under 0.02 on a 300-sample burst), the curve EQ at three frequencies, Auto Duck (fade down, through a breath, back up), and the rhythm track's beats
 - [ ] Not tried yet: listening. Checked in the desktop app (silent): a generated rhythm track; two picked clips duplicated with ripple, deleted with ripple and moved together, landing where the tests say; S-curve fades set on the picked ones; Ctrl+D walking on; Repair on a planted click (two of three left); Duplicate and Split New onto "(copy)" and "(split)" tracks at the right times with a gap in the original; Auto Duck of the music under the host ("Ducked 2 times"); the curve EQ dialog with the Telephone preset, applied as one undo step; Auto Duck's track list leaving out the clip's own track and waiting for a pick; no console errors
 
-**Part C — analysis and meters** (§5.5, §5.8)
-- [ ] Analysis: plot spectrum, contrast (foreground against background, WCAG audio), find clipping, beat finder, label sounds (labels as markers)
-- [ ] A live spectrum in the EQ; gain-reduction meters on the compressor, gate, glue, limiter and de-esser
+**Part C ✅ — analysis and meters** (§5.5, §5.8)
+- [x] A new Analyze menu, for the selection in the audio editor (or the picked clip, whole):
+  - Plot spectrum: the average power spectrum (Welch: Hann windows of 1024–16384 points, half overlapped, over every channel), a full-scale sine at 0 dB, on a log scale. The pointer reads the frequency, the nearest note with its cents, and the level; with nothing under it, the peak
+  - Contrast: measure a stretch of speech, then one of background (RMS each, "Use the selection"); the difference passes WCAG 2 (1.4.7) at 20 dB or more, and says by how much it falls short
+  - Find clipping (0.99 of full scale for 3 samples or more, runs within 10 ms joined), Beat finder (onsets, sensitivity 0.5) and Label sounds (above −30 dB, silences of 1 s or more between, sounds of 0.1 s or more) put markers on the timeline: "Clipped" and "Sound N" regions, "Beat" points. Each is one undo step and says what it found
+- [x] Gain-reduction meters in the header of each compressor, gate, glue, limiter and de-esser: a bar (to 24 dB) and the dB, rising at once and falling back about 20 dB a second. The engine reads each device's reduction after its block, at all three places effects run (tracks, returns, master); a closed gate reads its range
+- [x] A live spectrum behind the EQ's curve while it is shown and on: the EQ's output, tapped on the audio thread into a lock-free queue (mono), measured in sixth-octave bands from 20 Hz and sent with the meter frames. The tap follows the device through graph rebuilds and comes back after the audio device restarts
+- [x] Rust tests (240 in total) now also cover the spectrum plot (a sine's peak bin and level), RMS, clipping runs (joined and separate), labelled sounds (two bursts, short gaps bridged), and an engine test where a compressor reports its reduction and a tap hears its output
+- [ ] Not tried yet: watching the meters move, which needs playback. Checked in the desktop app (silent): a generated test file with four hits, one clipped: Find clipping marked 1 stretch at 2.00–2.05 s, Beat finder 4 beats at 0.5, 2, 3.5 and 5 s, Label sounds 4 sounds; Contrast of a hit against silence passing; Plot spectrum peaking at 440 Hz with the clipping's harmonics; GR meters on the compressor, gate and limiter (none on the EQ); the EQ's spectrum layer in place; no console errors
 
 **Part D — library and drums** (§5.7, §5.12)
 - [ ] The browser indexes your sample and preset folders: search, tags, favourites, recent items

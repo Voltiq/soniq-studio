@@ -74,6 +74,8 @@ impl Safety {
 pub struct Meters {
     pub master: Arc<PeakMeter>,
     pub safety: Arc<Safety>,
+    /// Gain reduction of dynamics devices, by device id.
+    devices: Mutex<HashMap<String, Arc<PeakMeter>>>,
     tracks: Mutex<HashMap<String, Arc<PeakMeter>>>,
     clips: Mutex<HashMap<String, Arc<ClipStatus>>>,
 }
@@ -107,6 +109,24 @@ impl Meters {
         tracks.retain(|id, _| ids.contains(id.as_str()));
         let mut clips = self.clips.lock().unwrap_or_else(|p| p.into_inner());
         clips.retain(|id, _| ids.contains(id.as_str()));
+    }
+
+    /// The gain-reduction meter of a device, created on first use. Never called on the audio thread.
+    pub fn device(&self, id: &str) -> Arc<PeakMeter> {
+        let mut devices = self.devices.lock().unwrap_or_else(|p| p.into_inner());
+        Arc::clone(devices.entry(id.to_string()).or_default())
+    }
+
+    /// Forgets devices no longer in the song.
+    pub fn retain_devices(&self, ids: &HashSet<&str>) {
+        let mut devices = self.devices.lock().unwrap_or_else(|p| p.into_inner());
+        devices.retain(|id, _| ids.contains(id.as_str()));
+    }
+
+    /// Reads and resets the devices' gain reduction (dB), for those turning anything down.
+    pub fn take_devices(&self) -> Vec<(String, f32)> {
+        let devices = self.devices.lock().unwrap_or_else(|p| p.into_inner());
+        devices.iter().map(|(id, m)| (id.clone(), m.take()[0])).filter(|(_, db)| *db > 0.05).collect()
     }
 
     /// Reads and resets every meter.

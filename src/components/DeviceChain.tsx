@@ -9,7 +9,7 @@ import type { Chain, ChainPatch, Device, MacroMap, Monitor, Track } from "../sta
 import { DEVICE_DRAG_TYPE } from "./BrowserPanel";
 import { Waveform } from "./controls/ClipCanvas";
 import { Knob } from "./controls/Knob";
-import { DynamicsCurve, EqEditor } from "./EffectPanels";
+import { DynamicsCurve, EqEditor, ReductionMeter } from "./EffectPanels";
 import { ParamControl, ParamGroups, panelParams, paramOf, type Mapping, type Owner } from "./DeviceControls";
 import { Icon } from "./Icon";
 import { Popover } from "./Menu";
@@ -337,6 +337,9 @@ function RackBody({ track, device }: { track: Owner; device: Device }) {
   );
 }
 
+/** Devices that turn the sound down, and show by how much. */
+const REDUCING = new Set(["comp", "gate", "limiter", "glue", "deesser"]);
+
 function DeviceCard({ track, device }: { track: Owner; device: Device }) {
   const { toggleDevice, removeDevice } = useStore.getState();
   const params = panelParams(device);
@@ -353,6 +356,7 @@ function DeviceCard({ track, device }: { track: Owner; device: Device }) {
           onClick={() => toggleDevice(track.id, device.id)}
         />
         <span className="dev-name">{device.name}</span>
+        {REDUCING.has(device.type) && device.on && <ReductionMeter id={device.id} />}
         {device.role === "instrument" && <span className="tag">Instrument</span>}
         {device.type === "plugin" ? (
           <span className="tag tip-b" data-tip={device.plugin?.path ?? ""}>

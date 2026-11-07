@@ -29,7 +29,7 @@ pub fn fx_chain(devices: &[Device], rate: u32, tracks: &HashMap<&str, usize>, pl
         .filter_map(|d| {
             let bank = bank(d);
             let fx = if d.kind == PLUGIN_TYPE { AudioFx::External(plugin(d, false)?) } else { AudioFx::build(&d.kind, rate, &bank)? };
-            Some(FxNode { id: d.id.clone(), fx, sidechain: d.sidechain.as_deref().and_then(|s| tracks.get(s).copied()), bank })
+            Some(FxNode::new(d.id.clone(), fx, d.sidechain.as_deref().and_then(|s| tracks.get(s).copied()), bank))
         })
         .collect()
 }

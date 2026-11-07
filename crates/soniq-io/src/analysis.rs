@@ -291,25 +291,68 @@ impl Analyzer {
     }
 
     fn spectrum(&mut self) -> Vec<f32> {
-        let mut buf: Vec<Complex<f32>> = vec![Complex::default(); FFT_LEN];
-        let start = FFT_LEN - self.recent.len();
-        for ((slot, s), w) in buf[start..].iter_mut().zip(&self.recent).zip(&self.window[start..]) {
-            *slot = Complex::new(s * w, 0.0);
+        spectrum_bands(&self.recent, self.fft.as_ref(), &self.window, self.rate, &mut self.bands);
+        self.bands.clone()
+    }
+}
+
+/// The latest `recent` mono samples in sixth-octave bands, falling back
+/// slowly from where `bands` were (dB, a full-scale sine reading 0).
+fn spectrum_bands(recent: &VecDeque<f32>, fft: &dyn Fft<f32>, window: &[f32], rate: u32, bands: &mut [f32]) {
+    let mut buf: Vec<Complex<f32>> = vec![Complex::default(); FFT_LEN];
+    let start = FFT_LEN - recent.len().min(FFT_LEN);
+    for ((slot, s), w) in buf[start..].iter_mut().zip(recent.iter().skip(recent.len().saturating_sub(FFT_LEN))).zip(&window[start..]) {
+        *slot = Complex::new(s * w, 0.0);
+    }
+    fft.process(&mut buf);
+    // A full-scale sine reads 0 dB: the Hann window halves the amplitude.
+    let scale = 4.0 / FFT_LEN as f32;
+    let power: Vec<f32> = buf[..FFT_LEN / 2].iter().map(|c| (c.norm() * scale).powi(2)).collect();
+    let bin_hz = rate as f32 / FFT_LEN as f32;
+    for (k, band) in bands.iter_mut().enumerate() {
+        let centre = 20.0 * 2f32.powf(k as f32 / 6.0);
+        let (lo, hi) = (centre * 2f32.powf(-1.0 / 12.0), centre * 2f32.powf(1.0 / 12.0));
+        let (first, last) = ((lo / bin_hz).ceil() as usize, ((hi / bin_hz).floor() as usize).min(power.len() - 1));
+        // Narrow low bands may hold no bin: the nearest one stands in.
+        let p = if first <= last { power[first..=last].iter().copied().fold(0.0, f32::max) } else { power[((centre / bin_hz).round() as usize).min(power.len() - 1)] };
+        let now = if p > 0.0 { (10.0 * p.log10()).max(SPECTRUM_FLOOR) } else { SPECTRUM_FLOOR };
+        *band = now.max(*band - SPECTRUM_FALL);
+    }
+}
+
+/// A live spectrum on its own (the EQ's): mono samples in, sixth-octave bands out.
+pub struct SpectrumMeter {
+    rate: u32,
+    recent: VecDeque<f32>,
+    fft: Arc<dyn Fft<f32>>,
+    window: Vec<f32>,
+    bands: Vec<f32>,
+}
+
+impl SpectrumMeter {
+    pub fn new(rate: u32) -> Self {
+        let window = (0..FFT_LEN).map(|i| (0.5 - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / FFT_LEN as f64).cos()) as f32).collect();
+        Self {
+            rate,
+            recent: VecDeque::with_capacity(FFT_LEN + 1),
+            fft: FftPlanner::new().plan_fft_forward(FFT_LEN),
+            window,
+            bands: vec![SPECTRUM_FLOOR; SPECTRUM_BANDS],
         }
-        self.fft.process(&mut buf);
-        // A full-scale sine reads 0 dB: the Hann window halves the amplitude.
-        let scale = 4.0 / FFT_LEN as f32;
-        let power: Vec<f32> = buf[..FFT_LEN / 2].iter().map(|c| (c.norm() * scale).powi(2)).collect();
-        let bin_hz = self.rate as f32 / FFT_LEN as f32;
-        for (k, band) in self.bands.iter_mut().enumerate() {
-            let centre = 20.0 * 2f32.powf(k as f32 / 6.0);
-            let (lo, hi) = (centre * 2f32.powf(-1.0 / 12.0), centre * 2f32.powf(1.0 / 12.0));
-            let (first, last) = ((lo / bin_hz).ceil() as usize, ((hi / bin_hz).floor() as usize).min(power.len() - 1));
-            // Narrow low bands may hold no bin: the nearest one stands in.
-            let p = if first <= last { power[first..=last].iter().copied().fold(0.0, f32::max) } else { power[((centre / bin_hz).round() as usize).min(power.len() - 1)] };
-            let now = if p > 0.0 { (10.0 * p.log10()).max(SPECTRUM_FLOOR) } else { SPECTRUM_FLOOR };
-            *band = now.max(*band - SPECTRUM_FALL);
+    }
+
+    pub fn push(&mut self, mono: &[f32]) {
+        for s in mono {
+            if self.recent.len() == FFT_LEN {
+                self.recent.pop_front();
+            }
+            self.recent.push_back(*s);
         }
+    }
+
+    /// dB in each of the [`SPECTRUM_BANDS`] bands.
+    pub fn bands(&mut self) -> Vec<f32> {
+        spectrum_bands(&self.recent, self.fft.as_ref(), &self.window, self.rate, &mut self.bands);
         self.bands.clone()
     }
 }

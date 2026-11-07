@@ -608,6 +608,13 @@ pub async fn engine_configure(state: State<'_, AppState>, config: EngineConfig) 
     }
 }
 
+/// A live spectrum of what `device` puts out (its panel is open), or none.
+#[tauri::command]
+pub fn device_spectrum(state: State<'_, AppState>, device: Option<String>) {
+    let consumer = state.engine.set_tap(device.clone());
+    *lock(&state.tap) = device.zip(consumer).map(|(id, c)| (id, c, soniq_io::SpectrumMeter::new(state.engine.sample_rate())));
+}
+
 /// The safety limiter before the speakers, on or off (at once, and remembered).
 #[tauri::command]
 pub fn engine_safety(state: State<'_, AppState>, on: bool) -> CmdResult<()> {
@@ -623,6 +630,12 @@ pub fn engine_safety(state: State<'_, AppState>, on: bool) -> CmdResult<()> {
 pub(crate) fn apply_engine(state: &AppState, config: &EngineConfig) -> CmdResult<EngineStatus> {
     let old_rate = state.engine.sample_rate();
     let status = state.engine.start(config)?;
+    // A new stream: the live spectrum (if any) needs its queue again.
+    let watched = lock(&state.tap).as_ref().map(|(id, ..)| id.clone());
+    if let Some(id) = watched {
+        let consumer = state.engine.set_tap(Some(id.clone()));
+        *lock(&state.tap) = consumer.map(|c| (id, c, soniq_io::SpectrumMeter::new(status.sample_rate)));
+    }
     // An open input follows the new settings (unless a take is running); the
     // new output stream also needs a fresh monitoring feed.
     if state.recorder.is_open() && !state.recorder.is_recording() {
@@ -1105,6 +1118,10 @@ pub struct MeterFrame {
     pub analysis: Option<soniq_io::Reading>,
     /// How far the safety limiter turned the master down since the last frame, in dB.
     pub limiter: f32,
+    /// Gain reduction of dynamics devices (dB), for those turning anything down.
+    pub devices: Vec<(String, f32)>,
+    /// The live spectrum of the device whose panel asked for it.
+    pub tap: Option<(String, Vec<f32>)>,
     /// A block of NaN or infinity (a broken plugin) was silenced.
     pub silenced: bool,
 }
@@ -1184,7 +1201,19 @@ pub fn meters_subscribe(app: AppHandle, state: State<'_, AppState>, channel: Cha
                 let (tracks, master) = state.engine.meters().take_all();
                 let t = state.engine.transport();
                 let (limiter, silenced) = state.engine.take_safety();
+                let tap = lock(&state.tap).as_mut().map(|(id, consumer, meter)| {
+                    let ready = consumer.slots();
+                    if let Ok(chunk) = consumer.read_chunk(ready) {
+                        let (a, b) = chunk.as_slices();
+                        meter.push(a);
+                        meter.push(b);
+                        chunk.commit_all();
+                    }
+                    (id.clone(), meter.bands())
+                });
                 let frame = MeterFrame {
+                    devices: state.engine.meters().take_devices(),
+                    tap,
                     limiter,
                     silenced,
                     position: t.position_seconds(),

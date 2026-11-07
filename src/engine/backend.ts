@@ -15,6 +15,8 @@ import type {
   ExportReport,
   ChaptersFile,
   CrashStatus,
+  MarkKind,
+  SpectrumPlot,
   FixAnalysis,
   SpeakerLevel,
   FrequencyScale,
@@ -94,6 +96,12 @@ export interface Backend {
   effect(clip: string, effects: Effect[], start?: number, end?: number, zeroCross?: boolean, label?: string): Promise<ProjectReply>;
   /** Plays the processed selection; resolves to its length in seconds. */
   previewEffect(clip: string, effects: Effect[], start?: number, end?: number): Promise<number>;
+  /** The average spectrum of the selection (or the whole clip). */
+  spectrumPlot(clip: string, start: number | undefined, end: number | undefined, size: number): Promise<SpectrumPlot>;
+  /** RMS level of a stretch of a clip, dBFS. */
+  clipLevel(clip: string, start: number, end: number): Promise<number>;
+  /** Finds clipping, beats or sounds and marks them on the timeline (one undo step). */
+  clipMark(clip: string, start: number | undefined, end: number | undefined, kind: MarkKind): Promise<ProjectReply>;
   /** Redraws a short damaged stretch (seconds from the clip start) from the sound around it. */
   repair(clip: string, start: number, end: number): Promise<ProjectReply>;
   /** What Fix my audio finds in the selection (or the whole clip), and what it would do. */
@@ -228,6 +236,9 @@ const desktop: Backend = {
     invoke("clip_effect", { clip, effects, start: start ?? null, end: end ?? null, zeroCross: !!zeroCross, label: label ?? null }),
   previewEffect: (clip, effects, start, end) => invoke("clip_effect_preview", { clip, effects, start: start ?? null, end: end ?? null }),
   repair: (clip, start, end) => invoke("clip_repair", { clip, start, end }),
+  spectrumPlot: (clip, start, end, size) => invoke("clip_spectrum_plot", { clip, start: start ?? null, end: end ?? null, size }),
+  clipLevel: (clip, start, end) => invoke("clip_level", { clip, start, end }),
+  clipMark: (clip, start, end, kind) => invoke("clip_mark", { clip, start: start ?? null, end: end ?? null, kind }),
   fixAnalyse: (clip, start, end, target) => invoke("clip_fix_analyse", { clip, start: start ?? null, end: end ?? null, target }),
   podcastMeasure: (tracks) => invoke("podcast_measure", { tracks }),
   podcastLevel: (tracks, target) => invoke("podcast_level", { tracks, target }),

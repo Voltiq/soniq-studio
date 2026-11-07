@@ -80,6 +80,7 @@ pub fn run() {
                 session_take: Mutex::new(None),
                 plugins: plugins::Plugins::new(),
                 analyzer: Mutex::new(None),
+                tap: Mutex::new(None),
             };
             app.manage(state);
             let state = app.state::<AppState>();
@@ -103,6 +104,10 @@ pub fn run() {
             commands::project_redo,
             commands::project_new,
             commands::engine_safety,
+            commands::device_spectrum,
+            processing::clip_spectrum_plot,
+            processing::clip_level,
+            processing::clip_mark,
             crash::crash_status,
             crash::crash_enable,
             crash::crash_seen,

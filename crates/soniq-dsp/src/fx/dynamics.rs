@@ -134,6 +134,11 @@ impl Gate {
         }
     }
 
+    /// The gain applied right now (1 when open, the range's floor when closed).
+    pub fn gain(&self) -> f32 {
+        self.gain.max(self.floor)
+    }
+
     pub fn adopt(&mut self, old: &mut Gate) {
         (self.open, self.held, self.gain) = (old.open, old.held.min(self.hold), old.gain);
     }

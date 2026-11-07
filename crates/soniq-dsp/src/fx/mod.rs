@@ -143,6 +143,20 @@ impl AudioFx {
         }
     }
 
+    /// How far a dynamics effect turns the sound down right now, in dB
+    /// (positive); `None` for effects that do not.
+    pub fn reduction(&self) -> Option<f32> {
+        let db = |gain: f32| -20.0 * gain.max(1e-6).log10();
+        match self {
+            Self::Compressor(fx) => Some(fx.reduction()),
+            Self::Gate(fx) => Some(db(fx.gain())),
+            Self::Limiter(fx) => Some(fx.reduction()),
+            Self::Glue(fx) => Some(fx.reduction()),
+            Self::DeEsser(fx) => Some(db(fx.gain())),
+            _ => None,
+        }
+    }
+
     /// Takes new parameter values (automation, modulators) without
     /// allocating: delay lines, envelopes and filter memories carry on.
     pub fn configure(&mut self, p: &dyn Params) {

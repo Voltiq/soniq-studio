@@ -10,6 +10,7 @@ mod effects;
 mod encode;
 mod generate;
 mod loudness;
+mod measure;
 mod onsets;
 mod peaks;
 mod repair;
@@ -19,7 +20,8 @@ mod stretch;
 mod tempo;
 mod wav;
 
-pub use analysis::{Analyzer, Reading, SPECTRUM_BANDS, SPECTRUM_FLOOR};
+pub use analysis::{Analyzer, Reading, SPECTRUM_BANDS, SPECTRUM_FLOOR, SpectrumMeter};
+pub use measure::{SpectrumPlot, find_clipping, label_sounds, plot_spectrum, rms_db};
 pub use decode::decode_file;
 pub use edit::{EditOp, apply_edit, delete_range, extract, insert, snap_to_zero_crossing};
 pub use effects::{EQ_BANDS, Effect, EffectContext, Processed, apply_effect, apply_effects};

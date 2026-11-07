@@ -247,6 +247,8 @@ pub struct AppState {
     pub plugins: crate::plugins::Plugins,
     /// Loudness, peaks and the spectrum of the master, while the meters panel is open.
     pub analyzer: Mutex<Option<soniq_io::Analyzer>>,
+    /// The device whose output its panel shows as a live spectrum, its queue, and the meter.
+    pub tap: Mutex<Option<(String, rtrb::Consumer<f32>, soniq_io::SpectrumMeter)>>,
 }
 
 pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -264,6 +266,8 @@ impl AppState {
         transport.set_beats_per_bar(project.beats_per_bar);
         let metered = project.tracks.iter().map(|t| t.id.as_str()).chain(project.returns.iter().map(|r| r.id.as_str()));
         self.engine.meters().retain(&metered.collect());
+        let devices = project.tracks.iter().flat_map(|t| &t.devices).chain(project.returns.iter().flat_map(|r| &r.devices)).chain(&project.master_devices);
+        self.engine.meters().retain_devices(&devices.map(|d| d.id.as_str()).collect());
         self.engine.set_graph(self.build_graph(session, true));
         self.sync_input(project);
         let mut routing = lock(&self.midi_routing);
@@ -459,6 +463,12 @@ impl AppState {
             .map(|r| ReturnNode::new(track_key(&r.id), track_gains(r.volume, r.pan, !r.mute), r.pre_fader, fx_chain(&r.devices, rate as u32, &index, &plugin), meter(&r.id)))
             .collect();
         graph.master_fx = fx_chain(&project.master_devices, rate as u32, &index, &plugin);
+        // Dynamics devices show how far they turn the sound down.
+        if live_meters {
+            for node in graph.fx_nodes_mut().filter(|n| n.fx.reduction().is_some()) {
+                node.meter = Some(meters.device(&node.id));
+            }
+        }
         // Plugins that hold their sound back are made up for everywhere else.
         graph.compensate();
         graph

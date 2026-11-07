@@ -33,6 +33,8 @@ pub enum Control {
     StopClips { grid: f64 },
     /// Every track plays the arrangement again, at once.
     BackToArrangement,
+    /// Sends one effect's output (by device id) to the queue, or stops.
+    Tap(Option<Box<(String, rtrb::Producer<f32>)>>),
 }
 
 /// Whatever the audio thread lets go of, sent back to be freed elsewhere.
@@ -40,6 +42,7 @@ pub enum Garbage {
     Graph(#[allow(dead_code)] Box<Graph>),
     Preview(#[allow(dead_code)] Arc<AudioBuffer>),
     Monitor(#[allow(dead_code)] Box<MonitorFeed>),
+    Tap(#[allow(dead_code)] Box<(String, rtrb::Producer<f32>)>),
 }
 
 /// A note played live (MIDI input, the computer keyboard, the piano roll),
@@ -299,6 +302,22 @@ impl Renderer {
                     self.links.previewing.store(true, Ordering::Relaxed);
                 }
                 Control::StopPreview => self.end_preview(),
+                Control::Tap(tap) => {
+                    // The old tap (wherever it is) goes; the new one goes on its device, if that plays.
+                    for node in self.graph.fx_nodes_mut() {
+                        if let Some(old) = node.tap.take() {
+                            let _ = self.links.garbage.push(Garbage::Tap(old));
+                        }
+                    }
+                    if let Some(tap) = tap {
+                        match self.graph.fx_nodes_mut().find(|n| n.id == tap.0) {
+                            Some(node) => node.tap = Some(tap),
+                            None => {
+                                let _ = self.links.garbage.push(Garbage::Tap(tap));
+                            }
+                        }
+                    }
+                }
                 Control::Monitor(mut feed) => {
                     if let Some(feed) = feed.as_mut() {
                         feed.set_output_rate(self.sample_rate);
@@ -616,6 +635,7 @@ impl Renderer {
             for node in ret.fx.iter_mut() {
                 let key = node.sidechain.and_then(|s| tracks.get(s)).map(|t| (&t.raw[0][..n], &t.raw[1][..n]));
                 node.fx.process(&mut il[..n], &mut ir[..n], key, &ctx);
+                node.after(&il[..n], &ir[..n]);
             }
             ret.comp.process(&mut il[..n], &mut ir[..n]);
             let target = ret.gain;
@@ -647,6 +667,7 @@ impl Renderer {
         for node in master_fx.iter_mut() {
             let key = node.sidechain.and_then(|s| tracks.get(s)).map(|t| (&t.raw[0][..n], &t.raw[1][..n]));
             node.fx.process(ml, mr, key, &ctx);
+            node.after(ml, mr);
         }
     }
 
@@ -862,6 +883,7 @@ unsafe fn effects(tracks: Tracks, i: usize, s: &Stretch) {
                 (&key[0][..n], &key[1][..n])
             });
             node.fx.process(&mut ol[..n], &mut or[..n], key, &ctx);
+            node.after(&ol[..n], &or[..n]);
         }
         // Held back to come out with the slowest track.
         (*t).comp.process(&mut ol[..n], &mut or[..n]);
@@ -1155,6 +1177,28 @@ mod tests {
     }
 
     #[test]
+    fn a_compressor_reports_its_reduction_and_a_tap_hears_its_output() {
+        let mut graph = graph_with(vec![constant_clip(0, 4000, 0.9)], [1.0, 1.0]);
+        let mut node = fx("c1", "comp", &[("thresh", -30.0), ("ratio", 8.0), ("attack", 0.1)]);
+        let meter = Arc::new(PeakMeter::default());
+        node.meter = Some(Arc::clone(&meter));
+        let (producer, mut consumer) = rtrb::RingBuffer::<f32>::new(8192);
+        node.tap = Some(Box::new(("c1".into(), producer)));
+        graph.tracks[0].fx.push(node);
+        let (mut r, t) = setup(graph);
+        r.prime();
+        t.set_playing(true);
+        let mut out = vec![0.0_f32; 1000];
+        r.process(&mut out, 2);
+        // −1 dBFS in, threshold −30, ratio 8: about 25 dB of reduction.
+        let db = meter.take()[0];
+        assert!(db > 15.0, "{db}");
+        assert_eq!(consumer.slots(), 500, "every frame of the block, mono");
+        let first = consumer.pop().unwrap();
+        assert!(first.abs() < 0.9, "after the compressor: {first}");
+    }
+
+    #[test]
     fn the_safety_limiter_keeps_the_speakers_under_the_ceiling() {
         let (mut r, t) = setup(graph_with(vec![constant_clip(0, 4000, 1.0)], [4.0, 4.0]));
         let safety = Arc::new(Safety::default());
@@ -1311,7 +1355,7 @@ mod tests {
 
     fn fx(id: &str, kind: &str, params: &[(&str, f64)]) -> crate::graph::FxNode {
         let bank = soniq_dsp::ParamBank::new(params.iter().map(|(k, v)| (k.to_string(), *v)));
-        crate::graph::FxNode { id: id.into(), fx: soniq_dsp::AudioFx::build(kind, 1000, &bank).unwrap(), sidechain: None, bank }
+        crate::graph::FxNode::new(id.into(), soniq_dsp::AudioFx::build(kind, 1000, &bank).unwrap(), None, bank)
     }
 
     fn playing(graph: Graph, frames: usize) -> Vec<f32> {
@@ -1339,7 +1383,7 @@ mod tests {
 
     fn late(samples: u32) -> crate::graph::FxNode {
         let fx = soniq_dsp::AudioFx::External(Box::new(Late(crate::graph::Delay::new(samples as usize), samples)));
-        crate::graph::FxNode { id: format!("late{samples}"), fx, sidechain: None, bank: soniq_dsp::ParamBank::default() }
+        crate::graph::FxNode::new(format!("late{samples}"), fx, None, soniq_dsp::ParamBank::default())
     }
 
     /// A track with one click at sample 100.

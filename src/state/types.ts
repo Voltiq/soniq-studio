@@ -690,6 +690,17 @@ export interface CrashStatus {
   reports: CrashReport[];
 }
 
+/** Mirrors `soniq_io::SpectrumPlot`: dB per bin, `sampleRate / size` Hz apart. */
+export interface SpectrumPlot {
+  sampleRate: number;
+  size: number;
+  db: number[];
+  peakHz: number;
+}
+
+/** What Analyze finds and marks (mirrors `processing::MarkKind`). */
+export type MarkKind = { kind: "clipping" } | { kind: "beats"; sensitivity: number } | { kind: "sounds"; threshold: number; minSilence: number; minSound: number };
+
 /** How loud a track's clips are, for podcast mode. */
 export interface SpeakerLevel {
   track: string;

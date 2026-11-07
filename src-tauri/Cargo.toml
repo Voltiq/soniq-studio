@@ -32,3 +32,4 @@ soniq-dsp.workspace = true
 soniq-midi.workspace = true
 soniq-host.workspace = true
 base64 = "0.22"
+rtrb.workspace = true

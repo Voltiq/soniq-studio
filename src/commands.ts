@@ -15,8 +15,8 @@ import { REPO_URL, editorTarget, pianoTarget, tempoLaneShown, useStore } from ".
 import { zoomPiano } from "./state/pianoView";
 import { projectLength, type SimpleEditOp, type ToolId, type ViewId } from "./state/types";
 
-export type MenuId = "File" | "Edit" | "Track" | "Clip" | "Effect" | "Transport" | "View" | "Help";
-export const MENUS: MenuId[] = ["File", "Edit", "Track", "Clip", "Effect", "Transport", "View", "Help"];
+export type MenuId = "File" | "Edit" | "Track" | "Clip" | "Effect" | "Analyze" | "Transport" | "View" | "Help";
+export const MENUS: MenuId[] = ["File", "Edit", "Track", "Clip", "Effect", "Analyze", "Transport", "View", "Help"];
 
 export interface Command {
   id: string;
@@ -611,6 +611,26 @@ export const COMMANDS: Command[] = [
     run: () => s().toggleAnalysis(),
     checked: () => s().analysisOpen,
   },
+  { id: "analyze.spectrum", label: "Plot spectrum…", menu: "Analyze", group: 0, run: () => s().setAnalyzeDialog("spectrum"), enabled: () => !!editorTarget(s()) },
+  { id: "analyze.contrast", label: "Contrast (speech over background)…", menu: "Analyze", group: 0, run: () => s().setAnalyzeDialog("contrast"), enabled: () => !!editorTarget(s()) },
+  { id: "analyze.clipping", label: "Find clipping", menu: "Analyze", group: 1, run: () => void s().markFound({ kind: "clipping" }), enabled: () => !!editorTarget(s()) },
+  {
+    id: "analyze.beats",
+    label: "Beat finder",
+    menu: "Analyze",
+    group: 1,
+    run: () => void s().markFound({ kind: "beats", sensitivity: 0.5 }),
+    enabled: () => !!editorTarget(s()),
+  },
+  {
+    id: "analyze.sounds",
+    label: "Label sounds",
+    menu: "Analyze",
+    group: 1,
+    run: () => void s().markFound({ kind: "sounds", threshold: -30, minSilence: 1, minSound: 0.1 }),
+    enabled: () => !!editorTarget(s()),
+  },
+  { id: "view.analysis2", label: "Meters · loudness, true peak, spectrum", menu: "Analyze", group: 2, run: () => s().toggleAnalysis(), checked: () => s().analysisOpen },
   { id: "help.start", label: "Start page and lessons", menu: "Help", group: 0, run: () => s().setWelcomeOpen(true) },
   { id: "help.updates", label: "Check for updates…", menu: "Help", group: 1, run: () => void s().checkForUpdates(true) },
   { id: "help.crashes", label: "Crash reports…", menu: "Help", group: 1, run: () => s().setAboutOpen("crashes") },

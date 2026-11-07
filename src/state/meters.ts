@@ -15,6 +15,12 @@ import { timelineClips, type Track } from "./types";
 
 export const meterLevels = new Map<string, number>();
 
+/** Gain reduction of dynamics devices (dB), held and let fall, by device id. */
+export const deviceReduction = new Map<string, number>();
+
+/** The live spectrum of one device (sixth-octave bands from 20 Hz, dB). */
+export const deviceSpectrum: { id: string | null; bands: number[] } = { id: null, bands: [] };
+
 /** When the safety limiter last acted (performance.now()) and by how much (dB). */
 export const safetyActivity = { at: -1e9, db: 0 };
 
@@ -33,6 +39,15 @@ export function ingestFrame(frame: MeterFrame, armed: Set<string>) {
   const input = Math.max(frame.input[0], frame.input[1]);
   for (const [id, [l, r]] of frame.tracks) smooth(id, Math.max(l, r, armed.has(id) ? input : 0));
   smooth("master", Math.max(frame.master[0], frame.master[1]));
+  // Reduction meters rise at once and fall back about 20 dB a second.
+  const seen = new Set<string>();
+  for (const [id, db] of frame.devices ?? []) {
+    seen.add(id);
+    deviceReduction.set(id, Math.max(db, (deviceReduction.get(id) ?? 0) - 0.7));
+  }
+  for (const [id, db] of deviceReduction) if (!seen.has(id)) deviceReduction.set(id, Math.max(0, db - 0.7));
+  if (frame.tap) [deviceSpectrum.id, deviceSpectrum.bands] = frame.tap;
+  else deviceSpectrum.id = null;
   if (frame.limiter && frame.limiter > 0.05) {
     const now = performance.now();
     safetyActivity.db = now - safetyActivity.at < 1500 ? Math.max(safetyActivity.db, frame.limiter) : frame.limiter;

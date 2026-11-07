@@ -4071,6 +4071,7 @@ name = "soniq-studio"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "rtrb",
  "serde",
  "serde_json",
  "soniq-dsp",

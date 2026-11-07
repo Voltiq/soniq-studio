@@ -6978,3 +6978,119 @@ code {
   stroke-width: 1.2;
   opacity: 0.7;
 }
+
+/* ---------- Gain reduction and the EQ's live spectrum ---------- */
+
+.gr-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+.gr-label {
+  font: 600 9px var(--mono);
+  letter-spacing: 0.04em;
+}
+
+.gr-well {
+  position: relative;
+  width: 44px;
+  height: 5px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  box-shadow: var(--inset-lo);
+  overflow: hidden;
+}
+
+/* Reduction grows from the right, as the gain comes down from the top. */
+.gr-fill {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: var(--warning);
+}
+
+.gr-db {
+  min-width: 30px;
+  text-align: right;
+  font-size: 10px;
+  color: var(--text-2);
+}
+
+.dev-head .gr-meter + .ib,
+.dev-head .gr-meter + .tag {
+  margin-left: 6px;
+}
+
+.eq-spectrum {
+  fill: color-mix(in oklab, var(--accent) 12%, transparent);
+  stroke: color-mix(in oklab, var(--accent) 35%, transparent);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+/* ---------- Analyze ---------- */
+
+.analyze-dialog {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.plot {
+  width: 100%;
+  height: auto;
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  cursor: crosshair;
+}
+
+.plot-fill {
+  fill: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+
+.plot-cursor {
+  stroke: var(--text-2);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.plot-readout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.contrast-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+.contrast-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.contrast-row .muted {
+  font-size: 12px;
+}
+
+.contrast-db {
+  font-size: 13px;
+}
+
+.contrast-result.pass .i {
+  color: var(--success);
+}

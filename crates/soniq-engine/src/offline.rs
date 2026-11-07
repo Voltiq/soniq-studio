@@ -80,7 +80,7 @@ mod tests {
         let clip = ClipNode::new(1000, 1000, 0, Arc::new(AudioBuffer::new(1000, vec![vec![0.5; 1000]])));
         let mut track = TrackNode::new([1.0, 1.0], vec![clip], Arc::new(PeakMeter::default()));
         let fx = soniq_dsp::AudioFx::External(Box::new(Late(crate::graph::Delay::new(300), 300)));
-        track.fx.push(crate::graph::FxNode { id: "late".into(), fx, sidechain: None, bank: soniq_dsp::ParamBank::default() });
+        track.fx.push(crate::graph::FxNode::new("late".into(), fx, None, soniq_dsp::ParamBank::default()));
         let mut graph = Graph::new(vec![track], 1.0);
         graph.compensate();
         // The clip lands where it would without the plugin, though the

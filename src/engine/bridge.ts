@@ -90,6 +90,10 @@ export interface MeterFrame {
   limiter?: number;
   /** A block of NaN or infinity (a broken plugin) was silenced. */
   silenced?: boolean;
+  /** Gain reduction of dynamics devices (dB), by device id. */
+  devices?: [string, number][];
+  /** The live spectrum (sixth-octave bands from 20 Hz, dB) of the device whose panel asked for it. */
+  tap?: [string, number[]] | null;
 }
 
 /** The master measured as it plays (mirrors `soniq_io::Reading`). */
@@ -138,6 +142,8 @@ export const engine = {
   status: () => (inTauri ? invoke<EngineStatus>("engine_status") : Promise.resolve(null)),
   config: () => (inTauri ? invoke<EngineConfig>("engine_config") : Promise.resolve(null)),
   configure: (config: EngineConfig) => invoke<EngineStatus>("engine_configure", { config }),
+  /** A live spectrum of a device's output while its panel shows it; null stops it. */
+  deviceSpectrum: (device: string | null) => (inTauri ? invoke<void>("device_spectrum", { device }) : Promise.resolve()),
   /** The safety limiter before the speakers, on or off at once. */
   safety: (on: boolean) => (inTauri ? invoke<void>("engine_safety", { on }) : Promise.resolve()),
   devices: () => (inTauri ? invoke<DeviceInfo[]>("audio_devices") : Promise.resolve([] as DeviceInfo[])),

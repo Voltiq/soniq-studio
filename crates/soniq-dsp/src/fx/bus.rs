@@ -258,6 +258,11 @@ pub struct DeEsser {
 }
 
 impl DeEsser {
+    /// The gain on the sibilance right now (1 when nothing is turned down).
+    pub fn gain(&self) -> f32 {
+        self.gain
+    }
+
     pub fn new(sr: f32, p: &dyn Params) -> Self {
         let mut de = Self {
             sr,
