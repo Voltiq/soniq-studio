@@ -1,0 +1,10 @@
+[package]
+name = "soniq-dsp"
+description = "Soniq Studio built-in instruments, MIDI effects, audio effects and warping"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+soniq-io.workspace = true
+rustfft.workspace = true

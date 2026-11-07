@@ -1,0 +1,11 @@
+[package]
+name = "soniq-project"
+description = "Soniq Studio project model, edit operations and undo history"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

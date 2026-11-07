@@ -1,0 +1,12 @@
+[package]
+name = "soniq-midi"
+description = "Soniq Studio MIDI: hardware inputs and Standard MIDI Files"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+soniq-project.workspace = true
+serde.workspace = true
+midir = "0.11"
+midly = "0.5.3"

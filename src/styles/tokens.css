@@ -1,0 +1,123 @@
+/*
+ * Graphiq design language — tokens.
+ * One graphite neutral ramp with a light twin, a single accent, depth from light
+ * rather than lines. Components only ever reference these tokens.
+ */
+
+:root {
+  --font: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --mono: "Geist Mono Variable", "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --accent: #6457f0;
+  --accent-hi: color-mix(in oklab, var(--accent), white 12%);
+  --accent-lo: color-mix(in oklab, var(--accent), black 14%);
+  --accent-soft: color-mix(in oklab, var(--accent) 16%, transparent);
+  --accent-line: color-mix(in oklab, var(--accent) 55%, transparent);
+  --accent-fill: linear-gradient(180deg, var(--accent-hi), var(--accent-lo));
+  /* Text on the accent: white, or graphite on a light accent the theme editor picked. */
+  --on-accent: #fff;
+
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --r-pill: 999px;
+
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --d1: 120ms;
+  --d2: 220ms;
+  --d3: 360ms;
+
+  /* Track colours are content, like artwork on a canvas — never chrome. */
+  --track-1: #6b8dff;
+  --track-2: #f59a72;
+  --track-3: #c9658a;
+  --track-4: #e9b85c;
+  --track-5: #2bb5a0;
+  --track-6: #8b7cf6;
+  --track-7: #5bb8e8;
+  --track-8: #a3b86c;
+}
+
+/* Graphite — dark (default) */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d0e11;
+  --bg-2: #101216;
+  --surface-1: #15171c;
+  --surface-2: #1b1e24;
+  --surface-3: #22262d;
+  --surface-4: #2b3038;
+  --text-1: #f1f2f4;
+  --text-2: #aeb3bd;
+  --text-3: #8a909b;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.12);
+  --shine-top: rgba(255, 255, 255, 0.14);
+  --shine-bot: rgba(255, 255, 255, 0.03);
+  --inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --inset-lo: inset 0 1px 2px rgba(0, 0, 0, 0.28);
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --sh-2: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 20px -6px rgba(0, 0, 0, 0.5);
+  --sh-3: 0 2px 4px rgba(0, 0, 0, 0.3), 0 20px 44px -12px rgba(0, 0, 0, 0.7);
+  --accent-text: color-mix(in oklab, var(--accent), white 50%);
+  --dots: rgba(255, 255, 255, 0.05);
+  --grid-bar: rgba(255, 255, 255, 0.07);
+  --grid-beat: rgba(255, 255, 255, 0.03);
+
+  --success: #3dd68c;
+  --warning: #f5b740;
+  --danger: #ff6b6b;
+  --info: #5ba8ff;
+}
+
+/* Porcelain — light */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #eceef2;
+  --bg-2: #e6e9ee;
+  --surface-1: #ffffff;
+  --surface-2: #f5f6f8;
+  --surface-3: #eceef2;
+  --surface-4: #e2e5ea;
+  --text-1: #111318;
+  --text-2: #4a505e;
+  --text-3: #646b79;
+  --line: rgba(17, 19, 24, 0.08);
+  --line-2: rgba(17, 19, 24, 0.14);
+  --shine-top: rgba(255, 255, 255, 1);
+  --shine-bot: rgba(17, 19, 24, 0.11);
+  --inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --inset-lo: inset 0 1px 2px rgba(16, 24, 40, 0.07);
+  --sh-1: 0 1px 2px rgba(16, 24, 40, 0.07);
+  --sh-2: 0 1px 2px rgba(16, 24, 40, 0.05), 0 8px 20px -6px rgba(16, 24, 40, 0.12);
+  --sh-3: 0 2px 4px rgba(16, 24, 40, 0.06), 0 20px 44px -12px rgba(16, 24, 40, 0.25);
+  --accent-text: var(--accent-lo);
+  --dots: rgba(17, 19, 24, 0.08);
+  --grid-bar: rgba(17, 19, 24, 0.1);
+  --grid-beat: rgba(17, 19, 24, 0.04);
+
+  --success: #0b7a47;
+  --warning: #9a5f00;
+  --danger: #d9363e;
+  --info: #2563eb;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --d1: 0ms;
+    --d2: 0ms;
+    --d3: 0ms;
+  }
+}

@@ -1,0 +1,17 @@
+[package]
+name = "soniq-engine"
+description = "Soniq Studio real-time audio engine: transport, mixer graph, meters, devices"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+soniq-io.workspace = true
+soniq-dsp.workspace = true
+serde.workspace = true
+cpal.workspace = true
+rtrb.workspace = true
+hound.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Threading"] }

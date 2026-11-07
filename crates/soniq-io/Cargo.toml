@@ -1,0 +1,22 @@
+[package]
+name = "soniq-io"
+description = "Soniq Studio audio decoding and encoding, resampling, waveform peaks, edits, effects and spectral processing"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+hound.workspace = true
+symphonia.workspace = true
+flacenc.workspace = true
+rustfft.workspace = true
+mp3lame-encoder.workspace = true
+vorbis_rs.workspace = true
+unsafe-libopus.workspace = true
+ogg.workspace = true
+id3.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

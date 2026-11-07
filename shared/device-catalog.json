@@ -1,0 +1,604 @@
+[
+  {
+    "type": "drum-rack",
+    "name": "Drum Rack",
+    "role": "instrument",
+    "category": "instrument",
+    "description": "16 pads with built-in drums; drop your own samples on them",
+    "phase": 3,
+    "params": [
+      { "id": "tune", "label": "Tune", "min": -12, "max": 12, "default": 0, "unit": "st", "bipolar": true, "step": 1 },
+      { "id": "volume", "label": "Volume", "min": -36, "max": 6, "default": 0, "unit": "dB" }
+    ],
+    "pads": {
+      "count": 16,
+      "first": 36,
+      "names": ["Kick", "Rim", "Snare", "Clap", "Snare 2", "Floor tom", "Closed hat", "Low tom", "Pedal hat", "Mid tom", "Open hat", "Mid tom 2", "High tom", "Crash", "High tom 2", "Ride"],
+      "params": [
+        { "id": "tune", "label": "Tune", "min": -24, "max": 24, "default": 0, "unit": "st", "bipolar": true, "step": 1 },
+        { "id": "vol", "label": "Level", "min": -36, "max": 6, "default": 0, "unit": "dB" },
+        { "id": "pan", "label": "Pan", "min": -100, "max": 100, "default": 0, "unit": "", "bipolar": true },
+        { "id": "decay", "label": "Decay", "min": 5, "max": 400, "default": 100, "unit": "%", "log": true },
+        { "id": "choke", "label": "Choke", "min": 0, "max": 4, "default": 0, "unit": "", "step": 1, "options": ["None", "1", "2", "3", "4"] }
+      ],
+      "defaults": {
+        "42": { "choke": 1, "pan": 15 },
+        "44": { "choke": 1, "pan": 15 },
+        "46": { "choke": 1, "pan": 15 },
+        "49": { "pan": -20 },
+        "51": { "pan": 25 }
+      }
+    }
+  },
+  {
+    "type": "synth",
+    "name": "Soniq Synth",
+    "role": "instrument",
+    "category": "instrument",
+    "description": "Two oscillators and a sub, filter with drive, two envelopes, LFOs, unison",
+    "phase": 3,
+    "params": [
+      { "id": "osc1", "label": "Osc 1", "min": 0, "max": 3, "default": 0, "unit": "", "step": 1, "options": ["Saw", "Square", "Triangle", "Sine"], "group": "Oscillators" },
+      { "id": "osc2", "label": "Osc 2", "min": 0, "max": 3, "default": 0, "unit": "", "step": 1, "options": ["Saw", "Square", "Triangle", "Sine"], "group": "Oscillators" },
+      { "id": "osc2Semi", "label": "Osc 2 pitch", "min": -24, "max": 24, "default": 0, "unit": "st", "bipolar": true, "step": 1, "group": "Oscillators" },
+      { "id": "detune", "label": "Detune", "min": 0, "max": 50, "default": 8, "unit": "ct", "group": "Oscillators" },
+      { "id": "mix", "label": "Osc mix", "min": 0, "max": 100, "default": 50, "unit": "%", "group": "Oscillators" },
+      { "id": "sub", "label": "Sub", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Oscillators" },
+      { "id": "filter", "label": "Filter", "min": 0, "max": 3, "default": 0, "unit": "", "step": 1, "options": ["LP 24", "LP 12", "Band", "HP"], "group": "Filter" },
+      { "id": "cutoff", "label": "Cutoff", "min": 40, "max": 18000, "default": 2200, "unit": "Hz", "log": true, "group": "Filter" },
+      { "id": "res", "label": "Resonance", "min": 0, "max": 100, "default": 22, "unit": "%", "group": "Filter" },
+      { "id": "drive", "label": "Drive", "min": 0, "max": 24, "default": 0, "unit": "dB", "group": "Filter" },
+      { "id": "envAmt", "label": "Env amount", "min": -100, "max": 100, "default": 30, "unit": "%", "bipolar": true, "group": "Filter" },
+      { "id": "fAttack", "label": "Attack", "min": 0.1, "max": 2000, "default": 2, "unit": "ms", "log": true, "group": "Filter envelope" },
+      { "id": "fDecay", "label": "Decay", "min": 1, "max": 5000, "default": 400, "unit": "ms", "log": true, "group": "Filter envelope" },
+      { "id": "fSustain", "label": "Sustain", "min": 0, "max": 100, "default": 30, "unit": "%", "group": "Filter envelope" },
+      { "id": "fRelease", "label": "Release", "min": 1, "max": 5000, "default": 300, "unit": "ms", "log": true, "group": "Filter envelope" },
+      { "id": "attack", "label": "Attack", "min": 0.1, "max": 2000, "default": 4, "unit": "ms", "log": true, "group": "Amp envelope" },
+      { "id": "decay", "label": "Decay", "min": 1, "max": 5000, "default": 300, "unit": "ms", "log": true, "group": "Amp envelope" },
+      { "id": "sustain", "label": "Sustain", "min": 0, "max": 100, "default": 80, "unit": "%", "group": "Amp envelope" },
+      { "id": "release", "label": "Release", "min": 1, "max": 5000, "default": 280, "unit": "ms", "log": true, "group": "Amp envelope" },
+      { "id": "lfoRate", "label": "LFO rate", "min": 0.05, "max": 20, "default": 4, "unit": "Hz", "log": true, "group": "Modulation" },
+      { "id": "lfoAmt", "label": "LFO → cutoff", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Modulation" },
+      { "id": "vibRate", "label": "Vibrato rate", "min": 0.1, "max": 12, "default": 5, "unit": "Hz", "log": true, "group": "Modulation" },
+      { "id": "vibrato", "label": "Vibrato", "min": 0, "max": 100, "default": 0, "unit": "ct", "group": "Modulation" },
+      { "id": "mode", "label": "Voices", "min": 0, "max": 2, "default": 0, "unit": "", "step": 1, "options": ["Poly", "Mono", "Legato"], "group": "Voice" },
+      { "id": "unison", "label": "Unison", "min": 1, "max": 5, "default": 1, "unit": "", "step": 1, "group": "Voice" },
+      { "id": "spread", "label": "Spread", "min": 0, "max": 100, "default": 30, "unit": "%", "group": "Voice" },
+      { "id": "glide", "label": "Glide", "min": 0, "max": 500, "default": 0, "unit": "ms", "group": "Voice" },
+      { "id": "volume", "label": "Volume", "min": -36, "max": 6, "default": 0, "unit": "dB", "group": "Voice" }
+    ]
+  },
+  {
+    "type": "epiano",
+    "name": "Electric Piano",
+    "role": "instrument",
+    "category": "instrument",
+    "description": "FM tine piano with tremolo",
+    "phase": 3,
+    "params": [
+      { "id": "tone", "label": "Tone", "min": -100, "max": 100, "default": 10, "unit": "", "bipolar": true },
+      { "id": "trem", "label": "Tremolo", "min": 0, "max": 100, "default": 18, "unit": "%" },
+      { "id": "release", "label": "Release", "min": 10, "max": 3000, "default": 420, "unit": "ms", "log": true },
+      { "id": "volume", "label": "Volume", "min": -36, "max": 6, "default": 0, "unit": "dB" }
+    ]
+  },
+  {
+    "type": "sampler",
+    "name": "Sampler",
+    "role": "instrument",
+    "category": "instrument",
+    "description": "Play any sample across the keyboard: classic, one-shot, looped or sliced",
+    "phase": 3,
+    "params": [
+      { "id": "mode", "label": "Mode", "min": 0, "max": 3, "default": 0, "unit": "", "step": 1, "options": ["Classic", "One-shot", "Loop", "Slice"], "group": "Sample" },
+      { "id": "root", "label": "Root", "min": 0, "max": 127, "default": 60, "unit": "note", "step": 1, "group": "Sample" },
+      { "id": "tune", "label": "Tune", "min": -24, "max": 24, "default": 0, "unit": "st", "bipolar": true, "step": 1, "group": "Sample" },
+      { "id": "start", "label": "Start", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Sample" },
+      { "id": "end", "label": "End", "min": 0, "max": 100, "default": 100, "unit": "%", "group": "Sample" },
+      { "id": "slices", "label": "Slices", "min": 2, "max": 64, "default": 8, "unit": "", "step": 1, "group": "Slices" },
+      { "id": "sliceBy", "label": "Slice by", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Equal", "Transients"], "group": "Slices" },
+      { "id": "sensitivity", "label": "Sensitivity", "min": 0, "max": 100, "default": 50, "unit": "%", "step": 1, "group": "Slices" },
+      { "id": "attack", "label": "Attack", "min": 0.1, "max": 2000, "default": 1, "unit": "ms", "log": true, "group": "Envelope" },
+      { "id": "decay", "label": "Decay", "min": 1, "max": 5000, "default": 500, "unit": "ms", "log": true, "group": "Envelope" },
+      { "id": "sustain", "label": "Sustain", "min": 0, "max": 100, "default": 100, "unit": "%", "group": "Envelope" },
+      { "id": "release", "label": "Release", "min": 1, "max": 5000, "default": 120, "unit": "ms", "log": true, "group": "Envelope" },
+      { "id": "cutoff", "label": "Cutoff", "min": 40, "max": 18000, "default": 18000, "unit": "Hz", "log": true, "group": "Filter" },
+      { "id": "res", "label": "Resonance", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Filter" },
+      { "id": "velSens", "label": "Velocity", "min": 0, "max": 100, "default": 60, "unit": "%", "group": "Filter" },
+      { "id": "volume", "label": "Volume", "min": -36, "max": 6, "default": 0, "unit": "dB", "group": "Filter" },
+      { "id": "lfoRate", "label": "LFO rate", "min": 0.05, "max": 20, "default": 4, "unit": "Hz", "log": true, "group": "LFO" },
+      { "id": "lfoAmt", "label": "LFO amount", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "LFO" },
+      { "id": "lfoDest", "label": "LFO to", "min": 0, "max": 2, "default": 0, "unit": "", "step": 1, "options": ["Pitch", "Filter", "Volume"], "group": "LFO" }
+    ]
+  },
+  {
+    "type": "rack",
+    "name": "Instrument Rack",
+    "role": "instrument",
+    "category": "instrument",
+    "description": "Layer and split instruments by key and velocity, with eight macros",
+    "phase": 3,
+    "params": [
+      { "id": "macro1", "label": "Macro 1", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro2", "label": "Macro 2", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro3", "label": "Macro 3", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro4", "label": "Macro 4", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro5", "label": "Macro 5", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro6", "label": "Macro 6", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro7", "label": "Macro 7", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro8", "label": "Macro 8", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "volume", "label": "Volume", "min": -36, "max": 6, "default": 0, "unit": "dB", "group": "Macros" }
+    ]
+  },
+  {
+    "type": "eq",
+    "name": "Equalizer",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Eight bands: cuts, shelves, bells and notches",
+    "phase": 4,
+    "params": [
+      { "id": "b1on", "label": "On", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Off", "On"], "group": "band:1" },
+      { "id": "b1type", "label": "Type", "min": 0, "max": 5, "default": 0, "unit": "", "step": 1, "options": ["Low cut", "Low shelf", "Bell", "Notch", "High shelf", "High cut"], "group": "band:1" },
+      { "id": "b1freq", "label": "Freq", "min": 20, "max": 20000, "default": 30, "unit": "Hz", "log": true, "group": "band:1" },
+      { "id": "b1gain", "label": "Gain", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true, "group": "band:1" },
+      { "id": "b1q", "label": "Q", "min": 0.1, "max": 18, "default": 0.71, "unit": "", "log": true, "group": "band:1" },
+      { "id": "b2on", "label": "On", "min": 0, "max": 1, "default": 1, "unit": "", "step": 1, "options": ["Off", "On"], "group": "band:2" },
+      { "id": "b2type", "label": "Type", "min": 0, "max": 5, "default": 1, "unit": "", "step": 1, "options": ["Low cut", "Low shelf", "Bell", "Notch", "High shelf", "High cut"], "group": "band:2" },
+      { "id": "b2freq", "label": "Freq", "min": 20, "max": 20000, "default": 100, "unit": "Hz", "log": true, "group": "band:2" },
+      { "id": "b2gain", "label": "Gain", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true, "group": "band:2" },
+      { "id": "b2q", "label": "Q", "min": 0.1, "max": 18, "default": 0.71, "unit": "", "log": true, "group": "band:2" },
+      { "id": "b3on", "label": "On", "min": 0, "max": 1, "default": 1, "unit": "", "step": 1, "options": ["Off", "On"], "group": "band:3" },
+      { "id": "b3type", "label": "Type", "min": 0, "max": 5, "default": 2, "unit": "", "step": 1, "options": ["Low cut", "Low shelf", "Bell", "Notch", "High shelf", "High cut"], "group": "band:3" },
+      { "id": "b3freq", "label": "Freq", "min": 20, "max": 20000, "default": 250, "unit": "Hz", "log": true, "group": "band:3" },
+      { "id": "b3gain", "label": "Gain", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true, "group": "band:3" },
+      { "id": "b3q", "label": "Q", "min": 0.1, "max": 18, "default": 0.71, "unit": "", "log": true, "group": "band:3" },
+      { "id": "b4on", "label": "On", "min": 0, "max": 1, "default": 1, "unit": "", "step": 1, "options": ["Off", "On"], "group": "band:4" },
+      { "id": "b4type", "label": "Type", "min": 0, "max": 5, "default": 2, "unit": "", "step": 1, "options": ["Low cut", "Low shelf", "Bell", "Notch", "High shelf", "High cut"], "group": "band:4" },
+      { "id": "b4freq", "label": "Freq", "min": 20, "max": 20000, "default": 800, "unit": "Hz", "log": true, "group": "band:4" },
+      { "id": "b4gain", "label": "Gain", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true, "group": "band:4" },
+      { "id": "b4q", "label": "Q", "min": 0.1, "max": 18, "default": 0.71, "unit": "", "log": true, "group": "band:4" },
+      { "id": "b5on", "label": "On", "min": 0, "max": 1, "default": 1, "unit": "", "step": 1, "options": ["Off", "On"], "group": "band:5" },
+      { "id": "b5type", "label": "Type", "min": 0, "max": 5, "default": 2, "unit": "", "step": 1, "options": ["Low cut", "Low shelf", "Bell", "Notch", "High shelf", "High cut"], "group": "band:5" },
+      { "id": "b5freq", "label": "Freq", "min": 20, "max": 20000, "default": 2500, "unit": "Hz", "log": true, "group": "band:5" },
+      { "id": "b5gain", "label": "Gain", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true, "group": "band:5" },
+      { "id": "b5q", "label": "Q", "min": 0.1, "max": 18, "default": 0.71, "unit": "", "log": true, "group": "band:5" },
+      { "id": "b6on", "label": "On", "min": 0, "max": 1, "default": 1, "unit": "", "step": 1, "options": ["Off", "On"], "group": "band:6" },
+      { "id": "b6type", "label": "Type", "min": 0, "max": 5, "default": 2, "unit": "", "step": 1, "options": ["Low cut", "Low shelf", "Bell", "Notch", "High shelf", "High cut"], "group": "band:6" },
+      { "id": "b6freq", "label": "Freq", "min": 20, "max": 20000, "default": 6000, "unit": "Hz", "log": true, "group": "band:6" },
+      { "id": "b6gain", "label": "Gain", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true, "group": "band:6" },
+      { "id": "b6q", "label": "Q", "min": 0.1, "max": 18, "default": 0.71, "unit": "", "log": true, "group": "band:6" },
+      { "id": "b7on", "label": "On", "min": 0, "max": 1, "default": 1, "unit": "", "step": 1, "options": ["Off", "On"], "group": "band:7" },
+      { "id": "b7type", "label": "Type", "min": 0, "max": 5, "default": 4, "unit": "", "step": 1, "options": ["Low cut", "Low shelf", "Bell", "Notch", "High shelf", "High cut"], "group": "band:7" },
+      { "id": "b7freq", "label": "Freq", "min": 20, "max": 20000, "default": 10000, "unit": "Hz", "log": true, "group": "band:7" },
+      { "id": "b7gain", "label": "Gain", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true, "group": "band:7" },
+      { "id": "b7q", "label": "Q", "min": 0.1, "max": 18, "default": 0.71, "unit": "", "log": true, "group": "band:7" },
+      { "id": "b8on", "label": "On", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Off", "On"], "group": "band:8" },
+      { "id": "b8type", "label": "Type", "min": 0, "max": 5, "default": 5, "unit": "", "step": 1, "options": ["Low cut", "Low shelf", "Bell", "Notch", "High shelf", "High cut"], "group": "band:8" },
+      { "id": "b8freq", "label": "Freq", "min": 20, "max": 20000, "default": 18000, "unit": "Hz", "log": true, "group": "band:8" },
+      { "id": "b8gain", "label": "Gain", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true, "group": "band:8" },
+      { "id": "b8q", "label": "Q", "min": 0.1, "max": 18, "default": 0.71, "unit": "", "log": true, "group": "band:8" },
+      { "id": "output", "label": "Output", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true }
+    ]
+  },
+  {
+    "type": "comp",
+    "name": "Compressor",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Evens out levels; sidechain-ready",
+    "phase": 4,
+    "params": [
+      { "id": "thresh", "label": "Threshold", "min": -60, "max": 0, "default": -18, "unit": "dB" },
+      { "id": "ratio", "label": "Ratio", "min": 1, "max": 20, "default": 4, "unit": ":1", "log": true },
+      { "id": "attack", "label": "Attack", "min": 0.1, "max": 100, "default": 10, "unit": "ms", "log": true },
+      { "id": "release", "label": "Release", "min": 10, "max": 1000, "default": 120, "unit": "ms", "log": true },
+      { "id": "knee", "label": "Knee", "min": 0, "max": 24, "default": 6, "unit": "dB" },
+      { "id": "makeup", "label": "Makeup", "min": 0, "max": 24, "default": 0, "unit": "dB" },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
+    ]
+  },
+  {
+    "type": "gate",
+    "name": "Gate",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Silences what falls below a threshold; sidechain-ready",
+    "phase": 4,
+    "params": [
+      { "id": "thresh", "label": "Threshold", "min": -80, "max": 0, "default": -40, "unit": "dB" },
+      { "id": "range", "label": "Range", "min": -80, "max": 0, "default": -80, "unit": "dB" },
+      { "id": "attack", "label": "Attack", "min": 0.01, "max": 50, "default": 0.5, "unit": "ms", "log": true },
+      { "id": "hold", "label": "Hold", "min": 0, "max": 500, "default": 20, "unit": "ms" },
+      { "id": "release", "label": "Release", "min": 1, "max": 2000, "default": 80, "unit": "ms", "log": true }
+    ]
+  },
+  {
+    "type": "reverb",
+    "name": "Reverb",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Rooms, halls and plates",
+    "phase": 4,
+    "params": [
+      { "id": "size", "label": "Size", "min": 0, "max": 100, "default": 55, "unit": "%" },
+      { "id": "decay", "label": "Decay", "min": 0.2, "max": 12, "default": 2.4, "unit": "s", "log": true },
+      { "id": "predelay", "label": "Pre-delay", "min": 0, "max": 200, "default": 20, "unit": "ms" },
+      { "id": "damp", "label": "Damping", "min": 500, "max": 20000, "default": 6000, "unit": "Hz", "log": true },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 25, "unit": "%" }
+    ]
+  },
+  {
+    "type": "delay",
+    "name": "Delay",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Tempo-synced echoes with ping-pong",
+    "phase": 4,
+    "params": [
+      { "id": "sync", "label": "Sync", "min": 0, "max": 11, "default": 6, "unit": "", "step": 1, "options": ["Off", "1/32", "1/16", "1/16 dotted", "1/8 triplet", "1/8", "1/8 dotted", "1/4 triplet", "1/4", "1/4 dotted", "1/2", "1/1"] },
+      { "id": "time", "label": "Time", "min": 1, "max": 2000, "default": 375, "unit": "ms", "log": true },
+      { "id": "mode", "label": "Mode", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Stereo", "Ping-pong"] },
+      { "id": "fb", "label": "Feedback", "min": 0, "max": 95, "default": 35, "unit": "%" },
+      { "id": "filter", "label": "Filter", "min": 200, "max": 20000, "default": 6000, "unit": "Hz", "log": true },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 20, "unit": "%" }
+    ]
+  },
+  {
+    "type": "chorus",
+    "name": "Chorus",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Thickens and widens with two swaying voices",
+    "phase": 4,
+    "params": [
+      { "id": "rate", "label": "Rate", "min": 0.05, "max": 5, "default": 0.8, "unit": "Hz", "log": true },
+      { "id": "depth", "label": "Depth", "min": 0, "max": 100, "default": 50, "unit": "%" },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 50, "unit": "%" }
+    ]
+  },
+  {
+    "type": "phaser",
+    "name": "Phaser / Flanger",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Sweeping notches, or a jet-plane flange",
+    "phase": 4,
+    "params": [
+      { "id": "mode", "label": "Mode", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Phaser", "Flanger"] },
+      { "id": "rate", "label": "Rate", "min": 0.02, "max": 10, "default": 0.5, "unit": "Hz", "log": true },
+      { "id": "depth", "label": "Depth", "min": 0, "max": 100, "default": 70, "unit": "%" },
+      { "id": "fb", "label": "Feedback", "min": 0, "max": 95, "default": 40, "unit": "%" },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 50, "unit": "%" }
+    ]
+  },
+  {
+    "type": "autofilter",
+    "name": "Auto Filter",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "A resonant filter with an LFO on the cutoff",
+    "phase": 4,
+    "params": [
+      { "id": "type", "label": "Type", "min": 0, "max": 2, "default": 0, "unit": "", "step": 1, "options": ["Low-pass", "High-pass", "Band-pass"] },
+      { "id": "cutoff", "label": "Cutoff", "min": 20, "max": 20000, "default": 1200, "unit": "Hz", "log": true },
+      { "id": "res", "label": "Resonance", "min": 0, "max": 95, "default": 30, "unit": "%" },
+      { "id": "rate", "label": "LFO rate", "min": 0.05, "max": 20, "default": 1, "unit": "Hz", "log": true },
+      { "id": "lfoAmt", "label": "LFO amount", "min": 0, "max": 100, "default": 0, "unit": "%" },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
+    ]
+  },
+  {
+    "type": "saturator",
+    "name": "Saturator",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Warmth, drive and soft clipping",
+    "phase": 4,
+    "params": [
+      { "id": "type", "label": "Curve", "min": 0, "max": 2, "default": 0, "unit": "", "step": 1, "options": ["Soft", "Hard", "Tube"] },
+      { "id": "drive", "label": "Drive", "min": 0, "max": 36, "default": 6, "unit": "dB" },
+      { "id": "tone", "label": "Tone", "min": -100, "max": 100, "default": 0, "unit": "", "bipolar": true },
+      { "id": "output", "label": "Output", "min": -24, "max": 12, "default": 0, "unit": "dB", "bipolar": true },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
+    ]
+  },
+  {
+    "type": "limiter",
+    "name": "Limiter",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Brick-wall peak control for the master",
+    "phase": 4,
+    "params": [
+      { "id": "gain", "label": "Gain", "min": 0, "max": 24, "default": 0, "unit": "dB" },
+      { "id": "ceiling", "label": "Ceiling", "min": -12, "max": 0, "default": -1, "unit": "dB" },
+      { "id": "release", "label": "Release", "min": 1, "max": 1000, "default": 50, "unit": "ms", "log": true }
+    ]
+  },
+  {
+    "type": "utility",
+    "name": "Utility",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Gain, width, pan, mono and phase",
+    "phase": 4,
+    "params": [
+      { "id": "gain", "label": "Gain", "min": -36, "max": 36, "default": 0, "unit": "dB", "bipolar": true },
+      { "id": "width", "label": "Width", "min": 0, "max": 200, "default": 100, "unit": "%" },
+      { "id": "pan", "label": "Pan", "min": -50, "max": 50, "default": 0, "unit": "", "bipolar": true },
+      { "id": "mono", "label": "Mono", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Off", "On"] },
+      { "id": "invert", "label": "Phase", "min": 0, "max": 3, "default": 0, "unit": "", "step": 1, "options": ["Normal", "Invert L", "Invert R", "Invert both"] }
+    ]
+  },
+  {
+    "type": "glue",
+    "name": "Glue Compressor",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Bus compression that holds a mix together",
+    "phase": 4,
+    "params": [
+      { "id": "thresh", "label": "Threshold", "min": -40, "max": 0, "default": -10, "unit": "dB" },
+      { "id": "ratio", "label": "Ratio", "min": 0, "max": 2, "default": 1, "unit": "", "step": 1, "options": ["2:1", "4:1", "10:1"] },
+      { "id": "attack", "label": "Attack", "min": 0, "max": 6, "default": 3, "unit": "", "step": 1, "options": ["0.01 ms", "0.1 ms", "0.3 ms", "1 ms", "3 ms", "10 ms", "30 ms"] },
+      { "id": "release", "label": "Release", "min": 0, "max": 6, "default": 6, "unit": "", "step": 1, "options": ["0.1 s", "0.2 s", "0.4 s", "0.6 s", "0.8 s", "1.2 s", "Auto"] },
+      { "id": "range", "label": "Range", "min": 0, "max": 70, "default": 70, "unit": "dB" },
+      { "id": "makeup", "label": "Makeup", "min": 0, "max": 24, "default": 0, "unit": "dB" },
+      { "id": "clip", "label": "Soft clip", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Off", "On"] },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
+    ]
+  },
+  {
+    "type": "multiband",
+    "name": "Multiband Dynamics",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Compresses lows, mids and highs on their own",
+    "phase": 4,
+    "params": [
+      { "id": "lowX", "label": "Low / mid", "min": 30, "max": 1000, "default": 120, "unit": "Hz", "log": true, "group": "Split" },
+      { "id": "highX", "label": "Mid / high", "min": 500, "max": 16000, "default": 2500, "unit": "Hz", "log": true, "group": "Split" },
+      { "id": "attack", "label": "Attack", "min": 0.1, "max": 100, "default": 10, "unit": "ms", "log": true, "group": "Split" },
+      { "id": "release", "label": "Release", "min": 10, "max": 1000, "default": 150, "unit": "ms", "log": true, "group": "Split" },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%", "group": "Split" },
+      { "id": "lowThresh", "label": "Threshold", "min": -60, "max": 0, "default": -20, "unit": "dB", "group": "Low" },
+      { "id": "lowRatio", "label": "Ratio", "min": 1, "max": 20, "default": 3, "unit": ":1", "log": true, "group": "Low" },
+      { "id": "lowGain", "label": "Gain", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true, "group": "Low" },
+      { "id": "midThresh", "label": "Threshold", "min": -60, "max": 0, "default": -20, "unit": "dB", "group": "Mid" },
+      { "id": "midRatio", "label": "Ratio", "min": 1, "max": 20, "default": 3, "unit": ":1", "log": true, "group": "Mid" },
+      { "id": "midGain", "label": "Gain", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true, "group": "Mid" },
+      { "id": "highThresh", "label": "Threshold", "min": -60, "max": 0, "default": -20, "unit": "dB", "group": "High" },
+      { "id": "highRatio", "label": "Ratio", "min": 1, "max": 20, "default": 3, "unit": ":1", "log": true, "group": "High" },
+      { "id": "highGain", "label": "Gain", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true, "group": "High" }
+    ]
+  },
+  {
+    "type": "deesser",
+    "name": "De-esser",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Tames harsh s and t sounds in vocals",
+    "phase": 4,
+    "params": [
+      { "id": "freq", "label": "Frequency", "min": 1000, "max": 16000, "default": 6000, "unit": "Hz", "log": true },
+      { "id": "thresh", "label": "Threshold", "min": -60, "max": 0, "default": -24, "unit": "dB" },
+      { "id": "range", "label": "Range", "min": 0, "max": 40, "default": 10, "unit": "dB" },
+      { "id": "mode", "label": "Mode", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Highs only", "Whole signal"] },
+      { "id": "listen", "label": "Listen", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Off", "Highs"] }
+    ]
+  },
+  {
+    "type": "transient",
+    "name": "Transient Shaper",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "More or less punch, more or less ring",
+    "phase": 4,
+    "params": [
+      { "id": "attack", "label": "Attack", "min": -100, "max": 100, "default": 0, "unit": "%", "bipolar": true },
+      { "id": "sustain", "label": "Sustain", "min": -100, "max": 100, "default": 0, "unit": "%", "bipolar": true },
+      { "id": "output", "label": "Output", "min": -24, "max": 12, "default": 0, "unit": "dB", "bipolar": true },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
+    ]
+  },
+  {
+    "type": "autopan",
+    "name": "Auto Pan",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Moves the sound left and right, or pulses it (tremolo)",
+    "phase": 4,
+    "params": [
+      { "id": "rate", "label": "Rate", "min": 0.05, "max": 20, "default": 1, "unit": "Hz", "log": true },
+      { "id": "sync", "label": "Sync", "min": 0, "max": 6, "default": 0, "unit": "", "step": 1, "options": ["Free", "1/16", "1/8", "1/4", "1/2", "1 bar", "2 bars"] },
+      { "id": "depth", "label": "Amount", "min": 0, "max": 100, "default": 100, "unit": "%" },
+      { "id": "shape", "label": "Shape", "min": 0, "max": 2, "default": 0, "unit": "", "step": 1, "options": ["Sine", "Triangle", "Square"] },
+      { "id": "phase", "label": "Phase", "min": 0, "max": 360, "default": 180, "unit": "°" }
+    ]
+  },
+  {
+    "type": "redux",
+    "name": "Redux",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Lo-fi: fewer bits and a lower sample rate",
+    "phase": 4,
+    "params": [
+      { "id": "bits", "label": "Bits", "min": 1, "max": 16, "default": 8, "unit": "", "step": 1 },
+      { "id": "down", "label": "Downsample", "min": 1, "max": 40, "default": 4, "unit": "×", "log": true },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
+    ]
+  },
+  {
+    "type": "pitch",
+    "name": "Pitch Shifter",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Moves the pitch, keeps the timing",
+    "phase": 4,
+    "params": [
+      { "id": "pitch", "label": "Pitch", "min": -24, "max": 24, "default": 0, "unit": "st", "step": 1, "bipolar": true },
+      { "id": "fine", "label": "Fine", "min": -50, "max": 50, "default": 0, "unit": "ct", "bipolar": true },
+      { "id": "window", "label": "Window", "min": 20, "max": 120, "default": 60, "unit": "ms" },
+      { "id": "gain", "label": "Gain", "min": -12, "max": 12, "default": 0, "unit": "dB", "bipolar": true },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
+    ]
+  },
+  {
+    "type": "convolution",
+    "name": "Convolution Reverb",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Rooms, halls, a plate and a cathedral, as impulse responses",
+    "phase": 4,
+    "params": [
+      { "id": "space", "label": "Space", "min": 0, "max": 4, "default": 2, "unit": "", "step": 1, "options": ["Room", "Chamber", "Hall", "Plate", "Cathedral"] },
+      { "id": "length", "label": "Length", "min": 25, "max": 200, "default": 100, "unit": "%" },
+      { "id": "predelay", "label": "Pre-delay", "min": 0, "max": 200, "default": 0, "unit": "ms" },
+      { "id": "lowcut", "label": "Low cut", "min": 20, "max": 2000, "default": 100, "unit": "Hz", "log": true },
+      { "id": "highcut", "label": "High cut", "min": 1000, "max": 20000, "default": 9000, "unit": "Hz", "log": true },
+      { "id": "width", "label": "Width", "min": 0, "max": 100, "default": 100, "unit": "%" },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 30, "unit": "%" }
+    ]
+  },
+  {
+    "type": "vocoder",
+    "name": "Vocoder",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Makes a synth, noise or another track talk",
+    "phase": 4,
+    "params": [
+      { "id": "carrier", "label": "Carrier", "min": 0, "max": 2, "default": 2, "unit": "", "step": 1, "options": ["Sidechain track", "Noise", "Saw"] },
+      { "id": "pitch", "label": "Saw pitch", "min": 24, "max": 84, "default": 48, "unit": "note", "step": 1 },
+      { "id": "bands", "label": "Bands", "min": 0, "max": 2, "default": 1, "unit": "", "step": 1, "options": ["8", "16", "24"] },
+      { "id": "formant", "label": "Formant", "min": -12, "max": 12, "default": 0, "unit": "st", "bipolar": true },
+      { "id": "attack", "label": "Attack", "min": 1, "max": 100, "default": 5, "unit": "ms", "log": true },
+      { "id": "release", "label": "Release", "min": 10, "max": 500, "default": 80, "unit": "ms", "log": true },
+      { "id": "output", "label": "Output", "min": -12, "max": 24, "default": 6, "unit": "dB", "bipolar": true },
+      { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
+    ]
+  },
+  {
+    "type": "lfo",
+    "name": "LFO",
+    "role": "effect",
+    "category": "modulator",
+    "description": "Moves any parameter on its track up and down, free or in time",
+    "phase": 4,
+    "params": [
+      { "id": "shape", "label": "Shape", "min": 0, "max": 5, "default": 0, "unit": "", "step": 1, "options": ["Sine", "Triangle", "Square", "Saw up", "Saw down", "Random"] },
+      { "id": "sync", "label": "Sync", "min": 0, "max": 7, "default": 0, "unit": "", "step": 1, "options": ["Free", "1/16", "1/8", "1/4", "1/2", "1 bar", "2 bars", "4 bars"] },
+      { "id": "rate", "label": "Rate", "min": 0.01, "max": 20, "default": 1, "unit": "Hz", "log": true },
+      { "id": "depth", "label": "Depth", "min": -100, "max": 100, "default": 50, "unit": "%", "bipolar": true },
+      { "id": "phase", "label": "Phase", "min": 0, "max": 360, "default": 0, "unit": "°" }
+    ]
+  },
+  {
+    "type": "follower",
+    "name": "Envelope Follower",
+    "role": "effect",
+    "category": "modulator",
+    "description": "Moves a parameter with the track's own loudness",
+    "phase": 4,
+    "params": [
+      { "id": "gain", "label": "Gain", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true },
+      { "id": "attack", "label": "Attack", "min": 1, "max": 500, "default": 10, "unit": "ms", "log": true },
+      { "id": "release", "label": "Release", "min": 10, "max": 2000, "default": 200, "unit": "ms", "log": true },
+      { "id": "depth", "label": "Depth", "min": -100, "max": 100, "default": 50, "unit": "%", "bipolar": true }
+    ]
+  },
+  {
+    "type": "denoise",
+    "name": "Noise Reduction",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Learns a noise profile and removes it (in the audio editor for now)",
+    "phase": 5,
+    "params": [
+      { "id": "amount", "label": "Reduction", "min": 0, "max": 48, "default": 12, "unit": "dB" },
+      { "id": "sens", "label": "Sensitivity", "min": 0, "max": 24, "default": 6, "unit": "dB" },
+      { "id": "smooth", "label": "Smoothing", "min": 0, "max": 12, "default": 3, "unit": "bands" }
+    ]
+  },
+  {
+    "type": "arp",
+    "name": "Arpeggiator",
+    "role": "effect",
+    "category": "midi-fx",
+    "description": "Turns held chords into patterns, in time with the song",
+    "phase": 3,
+    "params": [
+      { "id": "style", "label": "Style", "min": 0, "max": 6, "default": 0, "unit": "", "step": 1, "options": ["Up", "Down", "Up & down", "Down & up", "As played", "Random", "Chord"] },
+      { "id": "rate", "label": "Rate", "min": 0, "max": 5, "default": 3, "unit": "", "step": 1, "options": ["1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32"] },
+      { "id": "gate", "label": "Gate", "min": 5, "max": 200, "default": 80, "unit": "%" },
+      { "id": "octaves", "label": "Octaves", "min": 1, "max": 4, "default": 1, "unit": "", "step": 1 }
+    ]
+  },
+  {
+    "type": "chord",
+    "name": "Chord",
+    "role": "effect",
+    "category": "midi-fx",
+    "description": "Stacks up to three intervals on every note",
+    "phase": 3,
+    "params": [
+      { "id": "shift1", "label": "Shift 1", "min": -24, "max": 24, "default": 4, "unit": "st", "bipolar": true, "step": 1 },
+      { "id": "shift2", "label": "Shift 2", "min": -24, "max": 24, "default": 7, "unit": "st", "bipolar": true, "step": 1 },
+      { "id": "shift3", "label": "Shift 3", "min": -24, "max": 24, "default": 0, "unit": "st", "bipolar": true, "step": 1 }
+    ]
+  },
+  {
+    "type": "scale",
+    "name": "Scale",
+    "role": "effect",
+    "category": "midi-fx",
+    "description": "Moves every note into a key: the song's or one of its own",
+    "phase": 3,
+    "params": [
+      { "id": "scale", "label": "Scale", "min": 0, "max": 11, "default": 0, "unit": "", "step": 1, "options": ["Song key", "Major", "Minor", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Harmonic minor", "Melodic minor", "Major pentatonic", "Minor pentatonic", "Blues"] },
+      { "id": "root", "label": "Root", "min": 0, "max": 11, "default": 0, "unit": "", "step": 1, "options": ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"] }
+    ]
+  },
+  {
+    "type": "notelength",
+    "name": "Note Length",
+    "role": "effect",
+    "category": "midi-fx",
+    "description": "Every note lasts a set time, however long the key is held",
+    "phase": 3,
+    "params": [
+      { "id": "sync", "label": "Length", "min": 0, "max": 6, "default": 0, "unit": "", "step": 1, "options": ["Time", "1/32", "1/16", "1/8", "1/4", "1/2", "1/1"] },
+      { "id": "length", "label": "Time", "min": 10, "max": 4000, "default": 250, "unit": "ms", "log": true }
+    ]
+  },
+  {
+    "type": "random",
+    "name": "Random",
+    "role": "effect",
+    "category": "midi-fx",
+    "description": "Shifts some notes by a random interval",
+    "phase": 3,
+    "params": [
+      { "id": "chance", "label": "Chance", "min": 0, "max": 100, "default": 50, "unit": "%" },
+      { "id": "range", "label": "Range", "min": 1, "max": 24, "default": 12, "unit": "st", "step": 1 },
+      { "id": "direction", "label": "Direction", "min": 0, "max": 2, "default": 0, "unit": "", "step": 1, "options": ["Up & down", "Up", "Down"] },
+      { "id": "inKey", "label": "Notes", "min": 0, "max": 1, "default": 1, "unit": "", "step": 1, "options": ["Any", "In the song key"] }
+    ]
+  },
+  {
+    "type": "velocity",
+    "name": "Velocity",
+    "role": "effect",
+    "category": "midi-fx",
+    "description": "Shapes how hard notes play: curve, range and humanize",
+    "phase": 3,
+    "params": [
+      { "id": "drive", "label": "Drive", "min": -100, "max": 100, "default": 0, "unit": "", "bipolar": true },
+      { "id": "outLow", "label": "Lowest", "min": 1, "max": 127, "default": 1, "unit": "", "step": 1 },
+      { "id": "outHigh", "label": "Highest", "min": 1, "max": 127, "default": 127, "unit": "", "step": 1 },
+      { "id": "random", "label": "Random", "min": 0, "max": 100, "default": 0, "unit": "%" }
+    ]
+  }
+]
