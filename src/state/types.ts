@@ -56,7 +56,11 @@ export interface AudioClip extends ClipBase {
   fadeOut: number;
   /** Follows the song's tempo: its beats stay on the song's beats. */
   warp?: Warp;
+  /** The shape of the fades and crossfades; absent is the standard (straight fades, equal-power crossfades). */
+  curve?: FadeCurve;
 }
+
+export type FadeCurve = "linear" | "equalPower" | "sCurve";
 
 export type WarpMode = "beats" | "tones" | "repitch";
 
@@ -446,7 +450,12 @@ export type Op =
   | { op: "setKey"; key: string }
   | { op: "deleteClip"; clip: string }
   | { op: "moveClip"; clip: string; track: string; start: number }
-  | { op: "trimClip"; clip: string; start: number; length: number }
+  | { op: "trimClip"; clip: string; start: number; length: number; ripple?: boolean }
+  | { op: "moveClips"; clips: string[]; delta: number; tracks?: number }
+  | { op: "deleteClips"; clips: string[]; ripple?: boolean }
+  | { op: "duplicateClips"; clips: string[]; ripple?: boolean }
+  | { op: "setFadeCurve"; clips: string[]; curve: FadeCurve | null }
+  | { op: "extractToTrack"; clip: string; start: number; end: number; cut?: boolean }
   | { op: "splitClip"; clip: string; at: number }
   | { op: "duplicateClip"; clip: string; linked?: boolean }
   | { op: "unlinkClip"; clip: string }
@@ -574,7 +583,9 @@ export type Effect =
   | { type: "denoise"; reduction: number }
   | { type: "trimSilence"; threshold: number; keep: number }
   | { type: "level"; target: number; maxGain: number }
-  | { type: "fixAudio"; target: number };
+  | { type: "fixAudio"; target: number }
+  | { type: "curveEq"; points: [number, number][] }
+  | { type: "autoDuck"; track: string; depth: number; threshold: number; fadeDown: number; fadeUp: number; maxPause: number };
 
 export type EffectType = Effect["type"];
 
@@ -584,7 +595,8 @@ export type Generator =
   | { type: "chirp"; waveform: Waveform; from: number; to: number; amplitude: number; seconds: number }
   | { type: "noise"; color: NoiseColor; amplitude: number; seconds: number }
   | { type: "dtmf"; digits: string; tone: number; gap: number; amplitude: number }
-  | { type: "silence"; seconds: number };
+  | { type: "silence"; seconds: number }
+  | { type: "rhythmTrack"; bpm: number; beatsPerBar: number; bars: number; sound: "tick" | "beep" | "wood"; accent: boolean; amplitude: number };
 
 export type GeneratorType = Generator["type"];
 

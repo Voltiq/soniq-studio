@@ -40,6 +40,7 @@ import {
   type ExportFormat,
   type ExportReport,
   type ChaptersFile,
+  type FadeCurve,
   type TrackRole,
   type BatchOutput,
   type BatchProgress,
@@ -219,6 +220,12 @@ export interface Store {
   /** A return track or the master whose devices the chain panel shows instead of the selected track's. */
   chainOwner: string | null;
   selectedClipId: string | null;
+  /** More clips picked with Ctrl or Shift, besides `selectedClipId`. */
+  clipSelection: string[];
+  /** Ripple editing: deleting closes the gap, duplicating and trimming an end move what follows. */
+  ripple: boolean;
+  /** How far the picked clips are being dragged together, in px. */
+  groupDrag: { dx: number; dy: number } | null;
   /** Seconds from the start of the clip open in the editor. */
   editorSelection: EditorSelection | null;
   /** Where Paste lands without a selection, in seconds from the clip start. */
@@ -375,7 +382,18 @@ export interface Store {
   selectTrack(id: string): void;
   /** Shows a return's (or the master's) devices in the chain panel; null goes back to the selected track. */
   selectChain(id: string | null): void;
-  selectClip(trackId: string, clipId: string): void;
+  /** `add`: Ctrl or Shift was held; the clip joins (or leaves) the picked ones. */
+  selectClip(trackId: string, clipId: string, add?: boolean): void;
+  /** Every picked clip: the selected one and those added to it. */
+  pickedClips(): string[];
+  setGroupDrag(drag: { dx: number; dy: number } | null): void;
+  /** Moves every picked clip `delta` beats and `tracks` tracks. */
+  moveSelectedClips(delta: number, tracks: number): void;
+  toggleRipple(): void;
+  setFadeCurve(curve: FadeCurve | null): void;
+  /** Audacity's Duplicate (or, with `cut`, Split New): the editor's selection onto a new track. */
+  extractSelection(cut: boolean): Promise<void>;
+  repairSelection(): Promise<void>;
   setEditorSelection(range: EditorSelection | null): void;
   setEditorCursor(seconds: number): void;
   setEditorView(view: { start: number; end: number } | null): void;
@@ -665,7 +683,7 @@ export const useStore = create<Store>((set, get) => {
   const resetForNewSong = () => {
     get().setPlaying(false);
     get().seekBeats(0);
-    set({ clipStates: {}, editorSelection: null, selectedClipId: null, trackSelection: [], folded: [], automationOpen: {}, tempoLane: null });
+    set({ clipStates: {}, editorSelection: null, selectedClipId: null, clipSelection: [], trackSelection: [], folded: [], automationOpen: {}, tempoLane: null });
   };
 
   /** Outside the desktop app nothing reports launches: the session plays them at once. */
@@ -744,6 +762,9 @@ export const useStore = create<Store>((set, get) => {
     selectedTrackId: "",
     chainOwner: null,
     selectedClipId: null,
+    clipSelection: [],
+    ripple: readPref<"on" | "off">("ripple", ["on", "off"], "off") === "on",
+    groupDrag: null,
     editorSelection: null,
     editorCursor: 0,
     editorView: null,
@@ -827,6 +848,7 @@ export const useStore = create<Store>((set, get) => {
           path: reply.path,
           selectedTrackId,
           selectedClipId: createdClipTrack ? reply.created : clipExists ? s.selectedClipId : null,
+          clipSelection: s.clipSelection.filter((id) => tracks.some((t) => t.clips.some((c) => c.id === id))),
           selectedMarkerId: createdMarker ? reply.created : markerExists ? s.selectedMarkerId : null,
           pluginStatus: reply.plugins ?? {},
           pluginLatencyMs: reply.pluginLatencyMs ?? 0,
@@ -1435,9 +1457,62 @@ export const useStore = create<Store>((set, get) => {
 
     selectTrack: (id) => set({ selectedTrackId: id, chainOwner: null, trackSelection: [id] }),
     selectChain: (chainOwner) => set({ chainOwner }),
-    selectClip: (trackId, clipId) => {
-      if (get().selectedClipId !== clipId) set({ editorSelection: null, editorCursor: 0, editorView: null, pianoSelection: [], pianoZoom: null });
-      set({ selectedTrackId: trackId, selectedClipId: clipId, selectedMarkerId: null, chainOwner: null });
+    selectClip: (trackId, clipId, add) => {
+      const s = get();
+      const picked = s.pickedClips();
+      if (add && s.selectedClipId) {
+        // Ctrl or Shift: in or out of the picked ones; the newest is the selected one.
+        const others = picked.filter((id) => id !== clipId);
+        if (picked.includes(clipId)) {
+          set({ selectedClipId: others[others.length - 1] ?? null, clipSelection: others.slice(0, -1) });
+        } else set({ selectedTrackId: trackId, selectedClipId: clipId, clipSelection: others, selectedMarkerId: null, chainOwner: null });
+        return;
+      }
+      if (s.selectedClipId !== clipId) set({ editorSelection: null, editorCursor: 0, editorView: null, pianoSelection: [], pianoZoom: null });
+      // A click on one of several picked clips keeps them all (to drag them together).
+      const keep = picked.length > 1 && picked.includes(clipId) ? picked.filter((id) => id !== clipId) : [];
+      set({ selectedTrackId: trackId, selectedClipId: clipId, clipSelection: keep, selectedMarkerId: null, chainOwner: null });
+    },
+    pickedClips: () => {
+      const s = get();
+      return s.selectedClipId ? [s.selectedClipId, ...s.clipSelection.filter((id) => id !== s.selectedClipId)] : [];
+    },
+    setGroupDrag: (groupDrag) => set({ groupDrag }),
+    moveSelectedClips: (delta, tracks) => void get().run({ op: "moveClips", clips: get().pickedClips(), delta, tracks }),
+    toggleRipple: () => {
+      const ripple = !get().ripple;
+      writePref("ripple", ripple ? "on" : "off");
+      set({ ripple });
+      pushToast({
+        tone: "info",
+        title: ripple ? "Ripple editing on" : "Ripple editing off",
+        detail: ripple ? "Deleting a clip closes its gap; duplicating and trimming an end move the clips after it." : undefined,
+      });
+    },
+    setFadeCurve: (curve) => {
+      const clips = get().pickedClips();
+      if (clips.length) void get().run({ op: "setFadeCurve", clips, curve });
+    },
+    extractSelection: async (cut) => {
+      const s = get();
+      const target = editorTarget(s);
+      const sel = selectionOf(s);
+      if (!target || !sel) {
+        pushToast({ tone: "info", title: "Select some audio first" });
+        return;
+      }
+      await s.run({ op: "extractToTrack", clip: target.clip.id, start: sel.start, end: sel.end, cut });
+      pushToast({ tone: "success", title: cut ? "Split onto a new track" : "Copied onto a new track", detail: "At the same time, right below. No audio was copied: both play the same file." });
+    },
+    repairSelection: async () => {
+      const s = get();
+      const target = editorTarget(s);
+      const sel = selectionOf(s);
+      if (!target || !sel) {
+        pushToast({ tone: "info", title: "Select the click or dropout first", detail: "Zoom in and select just the damage: a quarter second at most." });
+        return;
+      }
+      if (await withReply("Repairing…", () => backend.repair(target.clip.id, sel.start, sel.end), "Could not repair")) pushToast({ tone: "success", title: "Repaired" });
     },
     setEditorSelection: (range) => set({ editorSelection: range }),
     setEditorCursor: (editorCursor) => set({ editorCursor }),
@@ -1578,12 +1653,12 @@ export const useStore = create<Store>((set, get) => {
     toggleDevice: (track, device) => void get().run({ op: "toggleDevice", track, device }),
 
     deleteSelectedClip: () => {
-      const clip = get().selectedClipId;
-      if (clip) void get().run({ op: "deleteClip", clip });
+      const clips = get().pickedClips();
+      if (clips.length) void get().run({ op: "deleteClips", clips, ripple: get().ripple });
     },
 
     moveClip: (clip, track, start) => void get().run({ op: "moveClip", clip, track, start }),
-    trimClip: (clip, start, length) => void get().run({ op: "trimClip", clip, start, length }),
+    trimClip: (clip, start, length) => void get().run({ op: "trimClip", clip, start, length, ripple: get().ripple }),
     splitClip: (clip, at) => void get().run({ op: "splitClip", clip, at }),
     setClipFades: (clip, fadeIn, fadeOut) => void get().run({ op: "setClipFades", clip, fadeIn, fadeOut }),
 
@@ -1603,9 +1678,18 @@ export const useStore = create<Store>((set, get) => {
     },
 
     duplicateSelectedClip: () => {
-      const clip = get().selectedClipId;
-      if (clip) void get().run({ op: "duplicateClip", clip });
-      else pushToast({ tone: "info", title: "Select a clip to duplicate" });
+      const clips = get().pickedClips();
+      if (!clips.length) return pushToast({ tone: "info", title: "Select a clip to duplicate" });
+      const before = new Set(get().project.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+      void get()
+        .run({ op: "duplicateClips", clips, ripple: get().ripple })
+        .then(() => {
+          // The copies become the selection, so pressing Ctrl+D again carries on along the timeline.
+          const tracks = get().project.tracks;
+          const copies = tracks.flatMap((t) => t.clips.filter((c) => !before.has(c.id)).map((c) => [t.id, c.id] as const));
+          const last = copies[copies.length - 1];
+          if (last) set({ selectedTrackId: last[0], selectedClipId: last[1], clipSelection: copies.slice(0, -1).map(([, id]) => id) });
+        });
     },
 
     edit: async (op) => {

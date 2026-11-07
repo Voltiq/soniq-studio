@@ -192,6 +192,31 @@ export const COMMANDS: Command[] = [
     },
     enabled: () => inPiano() || (inEditor() && !!editorTarget(s())),
   },
+  {
+    id: "edit.duplicateNew",
+    label: "Duplicate to a new track",
+    menu: "Edit",
+    group: 1,
+    run: () => void s().extractSelection(false),
+    enabled: () => inEditor() && !!s().editorSelection,
+  },
+  {
+    id: "edit.splitNew",
+    label: "Split New (move to a new track)",
+    menu: "Edit",
+    group: 1,
+    shortcut: "Ctrl+Alt+I",
+    run: () => void s().extractSelection(true),
+    enabled: () => inEditor() && !!s().editorSelection,
+  },
+  {
+    id: "edit.ripple",
+    label: "Ripple editing · deleting closes the gap",
+    menu: "Edit",
+    group: 2,
+    run: () => s().toggleRipple(),
+    checked: () => s().ripple,
+  },
   { id: "edit.trim", label: "Trim to selection", menu: "Edit", group: 1, run: () => s().trimToSelection(), enabled: () => inEditor() && !!s().editorSelection },
   { id: "edit.marker", label: "Add marker at the playhead", menu: "Edit", group: 2, shortcut: "Ctrl+M", run: () => s().addMarker() },
   { id: "edit.region", label: "Add region from the loop range", menu: "Edit", group: 2, shortcut: "Ctrl+Shift+M", run: () => s().addRegionFromLoop() },
@@ -317,7 +342,8 @@ export const COMMANDS: Command[] = [
     menu: "Clip",
     group: 1,
     shortcut: "Ctrl+D",
-    run: () => (inPiano() ? s().editNotes(duplicate, "Duplicate notes") : s().duplicateSelectedClip()),
+    // In the audio editor with a selection: Audacity's Duplicate (onto a new track).
+    run: () => (inPiano() ? s().editNotes(duplicate, "Duplicate notes") : inEditor() && s().editorSelection ? void s().extractSelection(false) : s().duplicateSelectedClip()),
     enabled: () => (inPiano() ? hasNotes() : s().selectedClipId !== null),
   },
   {
@@ -344,6 +370,27 @@ export const COMMANDS: Command[] = [
     },
   },
   { id: "clip.newMidi", label: "New MIDI clip", menu: "Clip", group: 1, run: () => void s().newMidiClip() },
+  ...(
+    [
+      [null, "standard", "Fades: standard (straight, equal-power crossfades)"],
+      ["linear", "linear", "Fades: linear"],
+      ["equalPower", "equalPower", "Fades: equal power"],
+      ["sCurve", "sCurve", "Fades: S-curve"],
+    ] as const
+  ).map(
+    ([curve, id, label]): Command => ({
+      id: `clip.fade.${id}`,
+      label,
+      menu: "Clip",
+      group: 2,
+      run: () => s().setFadeCurve(curve),
+      enabled: () => selectedClip()?.kind === "audio",
+      checked: () => {
+        const c = selectedClip();
+        return c?.kind === "audio" && (c.curve ?? null) === curve;
+      },
+    }),
+  ),
   {
     id: "clip.fix",
     label: "Fix my audio…",
@@ -469,6 +516,14 @@ export const COMMANDS: Command[] = [
       enabled: () => !!editorTarget(s()),
     }),
   ),
+  {
+    id: "process.repair",
+    label: "Repair (redraw a click or dropout)",
+    menu: "Effect",
+    group: 1,
+    run: () => void s().repairSelection(),
+    enabled: () => inEditor() && !!s().editorSelection,
+  },
   { id: "process.macro", label: "Apply a macro…", menu: "Effect", group: 2, run: () => s().setMacroDialog("clip"), enabled: () => !!editorTarget(s()) },
   { id: "process.generate", label: "Generate tone, noise or silence…", menu: "Effect", group: 2, run: () => s().setGeneratorOpen(true) },
   {

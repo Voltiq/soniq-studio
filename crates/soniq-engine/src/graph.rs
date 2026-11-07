@@ -19,6 +19,30 @@ pub const MAX_BLOCK: usize = 2048;
 /// Tracks beyond this are ignored by the renderer's gain smoothing state.
 pub const MAX_TRACKS: usize = 512;
 
+/// How a clip's fades and crossfades curve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FadeShape {
+    /// Straight fades, equal-power crossfades.
+    #[default]
+    Standard,
+    Linear,
+    EqualPower,
+    SCurve,
+}
+
+impl FadeShape {
+    /// The gain `x` (0–1) of the way into a fade in; a fade out reads it backwards.
+    pub fn gain(self, x: f32, crossfade: bool) -> f32 {
+        let x = x.clamp(0.0, 1.0);
+        match self {
+            FadeShape::Standard if crossfade => (x * std::f32::consts::FRAC_PI_2).sin(),
+            FadeShape::Standard | FadeShape::Linear => x,
+            FadeShape::EqualPower => (x * std::f32::consts::FRAC_PI_2).sin(),
+            FadeShape::SCurve => 0.5 - 0.5 * (x * std::f32::consts::PI).cos(),
+        }
+    }
+}
+
 pub struct ClipNode {
     /// Timeline position and length in samples at the engine rate.
     pub start: u64,
@@ -32,6 +56,7 @@ pub struct ClipNode {
     /// Equal-power crossfades with the neighbouring clips, in samples.
     pub xfade_in: u64,
     pub xfade_out: u64,
+    pub curve: FadeShape,
     /// Audio at the engine sample rate.
     pub buffer: Arc<AudioBuffer>,
     /// Identifies the clip across rebuilt graphs, so a warped one keeps its grains.
@@ -42,7 +67,7 @@ pub struct ClipNode {
 
 impl ClipNode {
     pub fn new(start: u64, len: u64, offset: u64, buffer: Arc<AudioBuffer>) -> Self {
-        Self { start, len, offset, gain: 1.0, fade_in: 0, fade_out: 0, xfade_in: 0, xfade_out: 0, buffer, key: 0, warp: None }
+        Self { start, len, offset, gain: 1.0, fade_in: 0, fade_out: 0, xfade_in: 0, xfade_out: 0, curve: FadeShape::Standard, buffer, key: 0, warp: None }
     }
 
     pub fn with_warp(mut self, warp: ClipWarp) -> Self {

@@ -94,6 +94,8 @@ export interface Backend {
   effect(clip: string, effects: Effect[], start?: number, end?: number, zeroCross?: boolean, label?: string): Promise<ProjectReply>;
   /** Plays the processed selection; resolves to its length in seconds. */
   previewEffect(clip: string, effects: Effect[], start?: number, end?: number): Promise<number>;
+  /** Redraws a short damaged stretch (seconds from the clip start) from the sound around it. */
+  repair(clip: string, start: number, end: number): Promise<ProjectReply>;
   /** What Fix my audio finds in the selection (or the whole clip), and what it would do. */
   fixAnalyse(clip: string, start: number | undefined, end: number | undefined, target: number): Promise<FixAnalysis>;
   /** How loud each track's clips are. */
@@ -225,6 +227,7 @@ const desktop: Backend = {
   effect: (clip, effects, start, end, zeroCross, label) =>
     invoke("clip_effect", { clip, effects, start: start ?? null, end: end ?? null, zeroCross: !!zeroCross, label: label ?? null }),
   previewEffect: (clip, effects, start, end) => invoke("clip_effect_preview", { clip, effects, start: start ?? null, end: end ?? null }),
+  repair: (clip, start, end) => invoke("clip_repair", { clip, start, end }),
   fixAnalyse: (clip, start, end, target) => invoke("clip_fix_analyse", { clip, start: start ?? null, end: end ?? null, target }),
   podcastMeasure: (tracks) => invoke("podcast_measure", { tracks }),
   podcastLevel: (tracks, target) => invoke("podcast_level", { tracks, target }),

@@ -110,6 +110,7 @@ pub fn run() {
             crash::crash_delete,
             crash::crash_ui,
             processing::clip_fix_analyse,
+            processing::clip_repair,
             podcast::podcast_measure,
             podcast::podcast_level,
             podcast::podcast_duck,

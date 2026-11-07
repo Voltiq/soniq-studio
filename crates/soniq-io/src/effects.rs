@@ -59,6 +59,13 @@ pub enum Effect {
     Level { target: f64, max_gain: f64 },
     /// Measures the audio and runs the repairs it needs, ending at `target` LUFS.
     FixAudio { target: f64 },
+    /// A drawn EQ curve: (Hz, dB) points, joined on a log-frequency axis.
+    CurveEq { points: Vec<[f64; 2]> },
+    /// Turns this audio down by `depth` dB wherever `track` (heard through
+    /// [`EffectContext::control`]) is louder than `threshold` dBFS: fading
+    /// down over `fade_down` s before and up over `fade_up` s after, and
+    /// staying down through pauses shorter than `max_pause` s.
+    AutoDuck { track: String, depth: f64, threshold: f64, fade_down: f64, fade_up: f64, max_pause: f64 },
 }
 
 impl Effect {
@@ -86,6 +93,8 @@ impl Effect {
             Effect::TrimSilence { .. } => "Trim silence",
             Effect::Level { .. } => "Level",
             Effect::FixAudio { .. } => "Fix my audio",
+            Effect::CurveEq { .. } => "Filter curve EQ",
+            Effect::AutoDuck { .. } => "Auto Duck",
         }
     }
 
@@ -101,6 +110,8 @@ impl Effect {
 #[derive(Default)]
 pub struct EffectContext<'a> {
     pub noise_profile: Option<&'a NoiseProfile>,
+    /// What Auto Duck listens to: the other track, over the same stretch, at the same rate.
+    pub control: Option<&'a AudioBuffer>,
 }
 
 pub struct Processed {
@@ -213,6 +224,19 @@ pub fn apply_effect(input: &AudioBuffer, effect: &Effect, ctx: &EffectContext) -
             let (levelled, spread) = crate::repair::level(input, *target, max_gain.clamp(0.0, 24.0))?;
             out = levelled;
             note = Some(format!("Quiet and loud parts brought {spread:.0} dB closer"));
+        }
+        Effect::CurveEq { points } => {
+            let points: Vec<(f64, f64)> = points.iter().map(|p| (p[0], p[1])).collect();
+            out = crate::spectral::curve_eq(input, &points);
+        }
+        Effect::AutoDuck { depth, threshold, fade_down, fade_up, max_pause, .. } => {
+            let control = ctx.control.ok_or("Auto Duck listens to another track: pick it in the dialog.")?;
+            let times = auto_duck(&mut out, control, *depth, *threshold, *fade_down, *fade_up, *max_pause);
+            note = Some(match times {
+                0 => "The other track never got loud enough to duck under".into(),
+                1 => "Ducked once".into(),
+                n => format!("Ducked {n} times"),
+            });
         }
         Effect::FixAudio { target } => {
             let plan = crate::repair::fix_plan(&crate::repair::diagnose(input), *target);
@@ -414,6 +438,52 @@ fn reverb(buffer: &mut AudioBuffer, room: f64, damping: f64, mix: f64) {
     }
 }
 
+/// Turns `audio` down wherever `control` is loud. Returns how many times.
+fn auto_duck(audio: &mut AudioBuffer, control: &AudioBuffer, depth: f64, threshold: f64, fade_down: f64, fade_up: f64, max_pause: f64) -> usize {
+    let rate = f64::from(audio.sample_rate);
+    let n = audio.frames();
+    let window = ((0.01 * rate) as usize).max(1);
+    let limit = db_to_gain(threshold.clamp(-80.0, 0.0));
+    let channels = control.channel_count().max(1) as f64;
+    // Where the control is loud, in 10 ms windows, joined across short pauses.
+    let mut regions: Vec<(usize, usize)> = Vec::new();
+    for w in 0..n.div_ceil(window) {
+        let (a, e) = (w * window, ((w + 1) * window).min(n));
+        let sum: f64 = control.channels.iter().map(|c| c.get(a..e.min(c.len())).unwrap_or(&[]).iter().map(|s| f64::from(*s).powi(2)).sum::<f64>()).sum();
+        if (sum / ((e - a) as f64 * channels)).sqrt() <= limit {
+            continue;
+        }
+        let gap = (max_pause.max(0.0) * rate) as usize;
+        match regions.last_mut() {
+            Some(last) if a <= last.1 + gap => last.1 = e,
+            _ => regions.push((a, e)),
+        }
+    }
+    let (down, up) = ((fade_down.max(0.0) * rate) as usize, (fade_up.max(0.0) * rate) as usize);
+    // How far down each sample is, 0–1: the most any region asks for.
+    let mut amount = vec![0.0_f32; n];
+    for &(a, e) in &regions {
+        for (i, x) in amount.iter_mut().enumerate().take((e + up).min(n)).skip(a.saturating_sub(down)) {
+            let v = if i < a {
+                1.0 - (a - i) as f32 / down.max(1) as f32
+            } else if i >= e {
+                1.0 - (i - e) as f32 / up.max(1) as f32
+            } else {
+                1.0
+            };
+            *x = x.max(v);
+        }
+    }
+    let depth = depth.clamp(-60.0, 0.0) as f32;
+    for (i, a) in amount.iter().enumerate() {
+        if *a > 0.0 {
+            let g = 10f32.powf(depth * a / 20.0);
+            audio.channels.iter_mut().for_each(|c| c[i] *= g);
+        }
+    }
+    regions.len()
+}
+
 /// Shortens pauses. Returns the new audio and how many seconds were cut.
 fn truncate_silence(input: &AudioBuffer, threshold_db: f64, min_silence: f64, keep: f64) -> (AudioBuffer, f64) {
     let rate = f64::from(input.sample_rate);
@@ -566,6 +636,27 @@ mod tests {
         let out = run(&AudioBuffer::new(rate, vec![ch]), Effect::TruncateSilence { threshold: -40.0, min_silence: 0.5, keep: 0.5 });
         let seconds = out.buffer.duration();
         assert!((seconds - 2.5).abs() < 0.05, "{seconds}");
+    }
+
+    #[test]
+    fn auto_duck_dips_under_the_other_track_and_comes_back() {
+        let rate = 1000;
+        let music = AudioBuffer::new(rate, vec![vec![0.5; 6000]]);
+        // A voice from 2 s to 3 s, with a short breath at 2.4 s.
+        let mut voice = vec![0.0_f32; 6000];
+        for (i, s) in voice.iter_mut().enumerate().take(3000).skip(2000) {
+            *s = if (2400..2500).contains(&i) { 0.0 } else { 0.3 };
+        }
+        let control = AudioBuffer::new(rate, vec![voice]);
+        let effect = Effect::AutoDuck { track: "t".into(), depth: -12.0, threshold: -30.0, fade_down: 0.5, fade_up: 0.5, max_pause: 1.0 };
+        let out = apply_effect(&music, &effect, &EffectContext { control: Some(&control), ..Default::default() }).unwrap();
+        let at = |i: usize| gain_to_db(f64::from(out.buffer.channels[0][i] / 0.5));
+        assert!(at(1000).abs() < 0.01, "untouched well before");
+        assert!((at(1750) + 6.0).abs() < 0.5, "half way down 0.25 s before the voice: {}", at(1750));
+        assert!((at(2450) + 12.0).abs() < 0.01, "stays down through the breath");
+        assert!(at(4000).abs() < 0.01, "back up after");
+        assert_eq!(out.note.as_deref(), Some("Ducked once"));
+        assert!(apply_effect(&music, &effect, &EffectContext::default()).is_err(), "needs the other track");
     }
 
     #[test]

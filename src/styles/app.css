@@ -6906,3 +6906,75 @@ code {
   background: var(--warning);
   color: #111318;
 }
+
+/* ---------- Filter curve EQ ---------- */
+
+.curve-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.curve-editor svg {
+  width: 100%;
+  height: auto;
+  border-radius: var(--r-md);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.curve-bg {
+  fill: var(--bg-2);
+}
+
+.curve-grid {
+  stroke: var(--grid-bar);
+  stroke-width: 1;
+}
+
+.curve-grid.zero {
+  stroke: var(--line-2);
+}
+
+.curve-label {
+  font: 500 9px var(--mono);
+  fill: var(--text-3);
+  pointer-events: none;
+}
+
+.curve-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.curve-point {
+  fill: var(--surface-1);
+  stroke: var(--accent);
+  stroke-width: 2;
+  cursor: grab;
+}
+
+.curve-point:hover {
+  fill: var(--accent);
+}
+
+.curve-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.curve-hint {
+  margin: 0;
+  font-size: 12px;
+}
+
+.fade-overlay polyline {
+  fill: none;
+  stroke: var(--text-1);
+  stroke-width: 1.2;
+  opacity: 0.7;
+}

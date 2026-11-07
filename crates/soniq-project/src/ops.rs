@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::{
     Asset, AutoPoint, AutoTarget, AutomationLane, Chain, ChainOwner, Clip, ClipContent, ControllerMapping, Device, DeviceParam, DeviceRole, FollowAction, History,
     MAX_BPM, MIN_BPM, MODULATOR_TYPES, MappingTarget, Marker, Monitor, Note, PLUGIN_TYPE, ParamRef, Project, SIDECHAIN_TYPES, SampleRef, TempoMap, TempoPoint, Track,
-    TrackKind, TrackRole, Warp, find_device_mut,
+    TrackKind, TrackRole, Warp, FadeCurve, find_device_mut,
 };
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -108,7 +108,51 @@ pub enum Op {
     MoveClip { clip: String, track: String, start: f64 },
     /// Sets a clip's timeline start and length (beats). Moving the start
     /// reveals or hides audio at the front, like dragging a clip's left edge.
-    TrimClip { clip: String, start: f64, length: f64 },
+    TrimClip {
+        clip: String,
+        start: f64,
+        length: f64,
+        /// Ripple editing: the clips after it on its track follow its end.
+        #[serde(default)]
+        ripple: bool,
+    },
+    /// Moves several timeline clips together: `delta` beats later (earlier
+    /// if negative) and `tracks` tracks down (up if negative).
+    MoveClips {
+        clips: Vec<String>,
+        delta: f64,
+        #[serde(default)]
+        tracks: i32,
+    },
+    /// Deletes several clips; with `ripple`, the clips after each close its gap.
+    DeleteClips {
+        clips: Vec<String>,
+        #[serde(default)]
+        ripple: bool,
+    },
+    /// Copies several clips as a block right after them; with `ripple`, the
+    /// clips after the block on their tracks move along to make room.
+    DuplicateClips {
+        clips: Vec<String>,
+        #[serde(default)]
+        ripple: bool,
+    },
+    /// The shape of the clips' fades and crossfades (`None`: the standard).
+    SetFadeCurve {
+        clips: Vec<String>,
+        #[serde(default)]
+        curve: Option<FadeCurve>,
+    },
+    /// Copies (or, with `cut`, moves) `start..end` seconds of an audio clip
+    /// onto a new track just below, at the same time (Audacity's Duplicate
+    /// and Split New). No audio is copied: the new clip plays the same file.
+    ExtractToTrack {
+        clip: String,
+        start: f64,
+        end: f64,
+        #[serde(default)]
+        cut: bool,
+    },
     /// Cuts a clip in two at `at` (beats on the timeline).
     SplitClip { clip: String, at: f64 },
     /// Places a copy right after the clip; a linked copy of a MIDI clip shares
@@ -296,6 +340,25 @@ fn rack_mut<'a>(track: &'a mut Track, id: &str) -> Result<&'a mut Device, OpErro
 }
 
 /// A clip on the timeline: session clips stay in their slots.
+/// Several timeline clips, as (track, clip) indexes in order.
+fn timeline_clips(project: &Project, ids: &[String]) -> Result<Vec<(usize, usize)>, OpError> {
+    if ids.is_empty() {
+        return Err(OpError::Invalid("Select some clips first.".into()));
+    }
+    let mut found: Vec<(usize, usize)> = ids.iter().map(|id| timeline_clip(project, id)).collect::<Result<_, _>>()?;
+    found.sort_unstable();
+    found.dedup();
+    Ok(found)
+}
+
+/// Ripple: the timeline clips on `track` that start at or after `from`
+/// (other than `except`) move by `by` beats.
+fn shift_after(track: &mut Track, from: f64, by: f64, except: &[String]) {
+    for c in track.clips.iter_mut().filter(|c| c.slot.is_none() && c.start >= from - 1e-9 && !except.contains(&c.id)) {
+        c.start = (c.start + by).max(0.0);
+    }
+}
+
 fn timeline_clip(project: &Project, id: &str) -> Result<(usize, usize), OpError> {
     let (ti, ci) = project.find_clip(id).ok_or_else(|| OpError::NoClip(id.to_string()))?;
     if project.tracks[ti].clips[ci].slot.is_some() {
@@ -643,13 +706,158 @@ fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
             clips.sort_by(|a, b| a.start.total_cmp(&b.start));
             Ok(label(format!("Move clip “{name}”")))
         }
-        Op::TrimClip { clip, start, length } => {
+        Op::TrimClip { clip, start, length, ripple } => {
             let (ti, ci) = project.find_clip(&clip).ok_or(OpError::NoClip(clip))?;
             let tempo = project.tempo_map();
             let asset_duration = project.tracks[ti].clips[ci].asset().and_then(|a| project.asset(a)).map(|a| a.duration());
             let c = &mut project.tracks[ti].clips[ci];
+            let old_end = c.end(&tempo);
             trim(c, start.max(0.0), length.max(MIN_CLIP_BEATS), &tempo, asset_duration);
-            Ok(label(format!("Trim clip “{}”", c.name)))
+            let (name, moved) = (c.name.clone(), c.end(&tempo) - old_end);
+            let id = c.id.clone();
+            if ripple && c.slot.is_none() && moved.abs() > 1e-9 {
+                shift_after(&mut project.tracks[ti], old_end, moved, &[id]);
+            }
+            Ok(label(format!("Trim clip “{name}”")))
+        }
+        Op::MoveClips { clips, delta, tracks } => {
+            let picked = timeline_clips(project, &clips)?;
+            let count = project.tracks.len() as i64;
+            for &(ti, _) in &picked {
+                let to = ti as i64 + i64::from(tracks);
+                if to < 0 || to >= count {
+                    return Err(OpError::Invalid("There is no track there for all of them.".into()));
+                }
+                if project.tracks[to as usize].kind != project.tracks[ti].kind {
+                    return Err(OpError::Invalid("Some of them would land on a track of another kind: audio clips go on audio tracks, MIDI on MIDI.".into()));
+                }
+            }
+            // Nothing goes before the start of the song.
+            let earliest = picked.iter().map(|&(ti, ci)| project.tracks[ti].clips[ci].start).fold(f64::INFINITY, f64::min);
+            let delta = delta.max(-earliest);
+            let mut taken = Vec::new();
+            for &(ti, ci) in picked.iter().rev() {
+                taken.push((ti, project.tracks[ti].clips.remove(ci)));
+            }
+            for (ti, mut c) in taken {
+                c.start += delta;
+                project.tracks[(ti as i64 + i64::from(tracks)) as usize].clips.push(c);
+            }
+            for t in &mut project.tracks {
+                t.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
+            }
+            Ok(label(format!("Move {} clips", picked.len())))
+        }
+        Op::DeleteClips { clips, ripple } => {
+            let tempo = project.tempo_map();
+            let mut found: Vec<(usize, usize)> = clips.iter().map(|id| project.find_clip(id).ok_or_else(|| OpError::NoClip(id.clone()))).collect::<Result<_, _>>()?;
+            found.sort_unstable();
+            found.dedup();
+            // Gaps left on the timeline, per track: (start, end) in beats.
+            let mut gaps: Vec<(usize, f64, f64)> = Vec::new();
+            for &(ti, ci) in found.iter().rev() {
+                let c = project.tracks[ti].clips.remove(ci);
+                if c.slot.is_none() {
+                    gaps.push((ti, c.start, c.end(&tempo)));
+                }
+            }
+            if ripple {
+                // Latest gap first, so earlier ones are measured where they were.
+                gaps.sort_by(|a, b| b.1.total_cmp(&a.1));
+                for (ti, start, end) in gaps {
+                    shift_after(&mut project.tracks[ti], end, start - end, &[]);
+                }
+            }
+            project.prune_assets();
+            let what = if found.len() == 1 { "Delete clip".to_string() } else { format!("Delete {} clips", found.len()) };
+            Ok(label(if ripple { format!("{what} (ripple)") } else { what }))
+        }
+        Op::DuplicateClips { clips, ripple } => {
+            let tempo = project.tempo_map();
+            let picked = timeline_clips(project, &clips)?;
+            let start = picked.iter().map(|&(ti, ci)| project.tracks[ti].clips[ci].start).fold(f64::INFINITY, f64::min);
+            let end = picked.iter().map(|&(ti, ci)| project.tracks[ti].clips[ci].end(&tempo)).fold(0.0, f64::max);
+            let span = end - start;
+            let copies: Vec<(usize, Clip)> = picked
+                .iter()
+                .map(|&(ti, ci)| {
+                    let mut c = project.tracks[ti].clips[ci].clone();
+                    c.id = crate::new_id("c");
+                    c.start += span;
+                    if let ClipContent::Midi { link, .. } = &mut c.content {
+                        *link = None;
+                    }
+                    (ti, c)
+                })
+                .collect();
+            if ripple {
+                let mut tracks: Vec<usize> = picked.iter().map(|p| p.0).collect();
+                tracks.dedup();
+                for ti in tracks {
+                    shift_after(&mut project.tracks[ti], end, span, &clips);
+                }
+            }
+            for (ti, c) in copies {
+                project.tracks[ti].clips.push(c);
+            }
+            for t in &mut project.tracks {
+                t.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
+            }
+            Ok(label(if picked.len() == 1 { "Duplicate clip".into() } else { format!("Duplicate {} clips", picked.len()) }))
+        }
+        Op::SetFadeCurve { clips, curve } => {
+            for id in &clips {
+                let (ti, ci) = project.find_clip(id).ok_or_else(|| OpError::NoClip(id.clone()))?;
+                if let ClipContent::Audio { curve: shape, .. } = &mut project.tracks[ti].clips[ci].content {
+                    *shape = curve;
+                }
+            }
+            let name = match curve {
+                None => "standard",
+                Some(FadeCurve::Linear) => "linear",
+                Some(FadeCurve::EqualPower) => "equal power",
+                Some(FadeCurve::SCurve) => "S-curve",
+            };
+            Ok(label(format!("Fade shape: {name}")))
+        }
+        Op::ExtractToTrack { clip, start, end, cut } => {
+            let (ti, ci) = timeline_clip(project, &clip)?;
+            let tempo = project.tempo_map();
+            let original = project.tracks[ti].clips[ci].clone();
+            let ClipContent::Audio { duration, .. } = original.content else {
+                return Err(OpError::Invalid("Only audio clips can be split off this way.".into()));
+            };
+            let (from, to) = (start.clamp(0.0, duration), end.clamp(0.0, duration));
+            if to - from < 0.001 {
+                return Err(OpError::Invalid("Select some audio first.".into()));
+            }
+            let (a, b) = (original.beat_after(&tempo, original.start, from), original.beat_after(&tempo, original.start, to));
+            let mut piece = original.clone();
+            let mut left = None;
+            let mut right = None;
+            if a > original.start + MIN_CLIP_BEATS {
+                let (l, r) = split(&piece, a, &tempo);
+                left = Some(l);
+                piece = r;
+            }
+            if b < piece.end(&tempo) - MIN_CLIP_BEATS {
+                let (m, r) = split(&piece, b, &tempo);
+                piece = m;
+                right = Some(r);
+            }
+            piece.id = crate::new_id("c");
+            let source = &project.tracks[ti];
+            let mut track = Track::new(crate::new_id("t"), format!("{} {}", source.name, if cut { "(split)" } else { "(copy)" }), TrackKind::Audio, source.color);
+            track.group = source.group.clone();
+            track.clips.push(piece);
+            let id = track.id.clone();
+            if cut {
+                let rest: Vec<Clip> = left.into_iter().chain(right).collect();
+                project.tracks[ti].clips.splice(ci..=ci, rest);
+            }
+            project.tracks.insert(ti + 1, track);
+            let what = if cut { "Split New" } else { "Duplicate to a new track" };
+            Ok(Applied { label: what.into(), created: Some(id), tempo_changed: false })
         }
         Op::SplitClip { clip, at } => {
             let (ti, ci) = timeline_clip(project, &clip)?;
@@ -1320,11 +1528,112 @@ mod tests {
         let (ti, ci) = project.find_clip(&id).unwrap();
         assert!((project.tracks[ti].clips[ci].length_beats(&project.tempo_map()) - 8.0).abs() < 1e-9);
         // Trimming its left edge by two beats (one second at 120) skips a second of audio.
-        apply(&mut project, &mut history, Op::TrimClip { clip: id.clone(), start: 6.0, length: 6.0 }).unwrap();
+        apply(&mut project, &mut history, Op::TrimClip { clip: id.clone(), start: 6.0, length: 6.0, ripple: false }).unwrap();
         let (start, offset, duration) = audio(&project, &id);
         assert!((start - 6.0).abs() < 1e-9 && (offset - 3.0).abs() < 1e-9 && (duration - 3.0).abs() < 1e-9, "{start} {offset} {duration}");
         apply(&mut project, &mut history, Op::SetTempoPoints { points: vec![] }).unwrap();
         assert!(project.tempo.is_empty() && project.bpm == 60.0);
+    }
+
+    /// Three clips on the first track (2 beats long at 4, 8 and 12) and one on the second at 4.
+    fn song_with_clips() -> (Project, [String; 4]) {
+        let (mut project, _) = song_with_audio_clip();
+        project.tracks[0].clips.clear();
+        let ids: Vec<String> = [(0, 4.0), (0, 8.0), (0, 12.0), (1, 4.0)]
+            .iter()
+            .map(|&(t, at)| {
+                let c = Clip::audio("Take", "a1", at, 0.0, 2.0);
+                let id = c.id.clone();
+                project.tracks[t].clips.push(c);
+                id
+            })
+            .collect();
+        (project, [ids[0].clone(), ids[1].clone(), ids[2].clone(), ids[3].clone()])
+    }
+
+    fn starts(project: &Project, track: usize) -> Vec<f64> {
+        project.tracks[track].clips.iter().map(|c| c.start).collect()
+    }
+
+    #[test]
+    fn several_clips_move_delete_and_duplicate_together() {
+        let (mut project, [a, b, _, d]) = song_with_clips();
+        let mut history = History::new();
+        apply(&mut project, &mut history, Op::MoveClips { clips: vec![a.clone(), d.clone()], delta: 1.0, tracks: 0 }).unwrap();
+        assert_eq!((starts(&project, 0), starts(&project, 1)), (vec![5.0, 8.0, 12.0], vec![5.0]));
+        // Down a track: the first track's clip lands on the second; the second has no audio track under it.
+        assert!(apply(&mut project, &mut history, Op::MoveClips { clips: vec![a.clone(), d.clone()], delta: 0.0, tracks: 1 }).is_err());
+        apply(&mut project, &mut history, Op::MoveClips { clips: vec![a.clone()], delta: -100.0, tracks: 1 }).unwrap();
+        assert_eq!(starts(&project, 1), vec![0.0, 5.0], "never before the start");
+        history.undo(&mut project);
+        history.undo(&mut project);
+        apply(&mut project, &mut history, Op::DuplicateClips { clips: vec![a.clone(), b.clone()], ripple: false }).unwrap();
+        // The block 4–10 copies to 10–16, landing over the clip at 12.
+        assert_eq!(starts(&project, 0), vec![4.0, 8.0, 10.0, 12.0, 14.0]);
+        let copies: Vec<String> = project.tracks[0].clips.iter().filter(|c| c.start == 10.0 || c.start == 14.0).map(|c| c.id.clone()).collect();
+        apply(&mut project, &mut history, Op::DeleteClips { clips: copies, ripple: false }).unwrap();
+        assert_eq!(starts(&project, 0), vec![4.0, 8.0, 12.0]);
+        assert_eq!(history.undo_label(), Some("Delete 2 clips"));
+    }
+
+    #[test]
+    fn ripple_closes_gaps_and_makes_room() {
+        let (mut project, [a, b, c, d]) = song_with_clips();
+        let mut history = History::new();
+        // Deleting the middle clip pulls the last one 2 beats earlier; the other track stays.
+        apply(&mut project, &mut history, Op::DeleteClips { clips: vec![b.clone()], ripple: true }).unwrap();
+        assert_eq!((starts(&project, 0), starts(&project, 1)), (vec![4.0, 10.0], vec![4.0]));
+        history.undo(&mut project);
+        // Two gaps at once: each clip after them moves by what came before it.
+        apply(&mut project, &mut history, Op::DeleteClips { clips: vec![a.clone(), b.clone()], ripple: true }).unwrap();
+        assert_eq!(starts(&project, 0), vec![8.0]);
+        history.undo(&mut project);
+        // Duplicating with ripple pushes the rest along.
+        apply(&mut project, &mut history, Op::DuplicateClips { clips: vec![b.clone()], ripple: true }).unwrap();
+        assert_eq!(starts(&project, 0), vec![4.0, 8.0, 10.0, 14.0]);
+        history.undo(&mut project);
+        // Trimming an end with ripple: the clips after follow it.
+        apply(&mut project, &mut history, Op::TrimClip { clip: a.clone(), start: 4.0, length: 1.0, ripple: true }).unwrap();
+        assert_eq!(starts(&project, 0), vec![4.0, 7.0, 11.0]);
+        let _ = (c, d);
+    }
+
+    #[test]
+    fn duplicate_and_split_new_put_a_piece_on_a_new_track() {
+        let (mut project, id) = song_with_audio_clip();
+        let mut history = History::new();
+        let tracks = project.tracks.len();
+        // Seconds 1–3 of the clip (at 60 BPM, beats 5–7; the clip plays 2–6 s of the file from beat 4).
+        let copy = apply(&mut project, &mut history, Op::ExtractToTrack { clip: id.clone(), start: 1.0, end: 3.0, cut: false }).unwrap().created.unwrap();
+        assert_eq!(project.tracks.len(), tracks + 1);
+        assert_eq!(project.tracks[1].id, copy, "right below");
+        let piece = project.tracks[1].clips[0].id.clone();
+        assert_eq!(audio(&project, &piece), (5.0, 3.0, 2.0));
+        assert_eq!(audio(&project, &id), (4.0, 2.0, 4.0), "the original is untouched");
+        history.undo(&mut project);
+        apply(&mut project, &mut history, Op::ExtractToTrack { clip: id.clone(), start: 1.0, end: 3.0, cut: true }).unwrap();
+        let left: Vec<(f64, f64, f64)> = project.tracks[0].clips.iter().map(|c| audio(&project, &c.id)).collect();
+        assert_eq!(left, vec![(4.0, 2.0, 1.0), (7.0, 5.0, 1.0)], "a gap where the piece was");
+        assert_eq!(project.tracks[1].name, "Audio 1 (split)");
+    }
+
+    #[test]
+    fn fade_shapes_are_kept_and_cleared() {
+        let (mut project, [a, b, ..]) = song_with_clips();
+        let mut history = History::new();
+        apply(&mut project, &mut history, Op::SetFadeCurve { clips: vec![a.clone(), b.clone()], curve: Some(FadeCurve::SCurve) }).unwrap();
+        let shape = |p: &Project, id: &str| {
+            let (ti, ci) = p.find_clip(id).unwrap();
+            match &p.tracks[ti].clips[ci].content {
+                ClipContent::Audio { curve, .. } => *curve,
+                ClipContent::Midi { .. } => None,
+            }
+        };
+        assert_eq!(shape(&project, &b), Some(FadeCurve::SCurve));
+        let json = serde_json::to_string(&project).unwrap();
+        assert!(json.contains("\"curve\":\"sCurve\""));
+        apply(&mut project, &mut history, Op::SetFadeCurve { clips: vec![a.clone()], curve: None }).unwrap();
+        assert_eq!(shape(&project, &a), None);
     }
 
     #[test]
@@ -1341,10 +1650,10 @@ mod tests {
         let (mut project, id) = song_with_audio_clip();
         let mut history = History::new();
         // Drag the left edge 3 beats earlier: only 2 s of audio exist before the offset.
-        apply(&mut project, &mut history, Op::TrimClip { clip: id.clone(), start: 1.0, length: 7.0 }).unwrap();
+        apply(&mut project, &mut history, Op::TrimClip { clip: id.clone(), start: 1.0, length: 7.0, ripple: false }).unwrap();
         assert_eq!(audio(&project, &id), (2.0, 0.0, 6.0));
         // Drag the right edge far out: stops at the end of the 10 s file.
-        apply(&mut project, &mut history, Op::TrimClip { clip: id.clone(), start: 2.0, length: 50.0 }).unwrap();
+        apply(&mut project, &mut history, Op::TrimClip { clip: id.clone(), start: 2.0, length: 50.0, ripple: false }).unwrap();
         assert_eq!(audio(&project, &id), (2.0, 0.0, 10.0));
     }
 

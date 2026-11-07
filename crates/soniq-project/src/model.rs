@@ -440,6 +440,10 @@ pub enum ClipContent {
         /// Follows the song's tempo: its beats stay on the song's beats.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         warp: Option<Warp>,
+        /// The shape of the fades and crossfades; `None` is the standard:
+        /// straight fades, equal-power crossfades.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        curve: Option<FadeCurve>,
     },
     Midi {
         /// Length in beats.
@@ -450,6 +454,18 @@ pub enum ClipContent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         link: Option<String>,
     },
+}
+
+/// The shape of a clip's fades and crossfades.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FadeCurve {
+    /// A straight line: quick at the quiet end (a crossfade dips in the middle).
+    Linear,
+    /// Constant loudness through a crossfade.
+    EqualPower,
+    /// Slow at both ends, quick in the middle.
+    SCurve,
 }
 
 /// How a warped clip keeps time with the song.
@@ -518,7 +534,7 @@ impl Clip {
             id: crate::new_id("c"),
             name: name.into(),
             start,
-            content: ClipContent::Audio { asset: asset.into(), offset, duration, gain: 0.0, fade_in: 0.0, fade_out: 0.0, warp: None },
+            content: ClipContent::Audio { asset: asset.into(), offset, duration, gain: 0.0, fade_in: 0.0, fade_out: 0.0, warp: None, curve: None },
             slot: None,
             follow: None,
         }

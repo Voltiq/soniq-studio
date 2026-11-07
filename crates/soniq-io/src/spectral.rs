@@ -223,6 +223,45 @@ pub fn spectral_gain(buffer: &AudioBuffer, start: usize, end: usize, low_hz: f64
     AudioBuffer::new(rate, channels)
 }
 
+/// The gain (dB) of a drawn curve at `hz`: straight lines between points on
+/// a log-frequency axis, level beyond the first and last.
+pub fn curve_db(points: &[(f64, f64)], hz: f64) -> f64 {
+    let Some(first) = points.first() else { return 0.0 };
+    let last = points[points.len() - 1];
+    if hz <= first.0 {
+        return first.1;
+    }
+    if hz >= last.0 {
+        return last.1;
+    }
+    let i = points.partition_point(|p| p.0 <= hz);
+    let (a, b) = (points[i - 1], points[i]);
+    let t = (hz.ln() - a.0.ln()) / (b.0.ln() - a.0.ln()).max(1e-12);
+    a.1 + (b.1 - a.1) * t
+}
+
+/// Filter Curve EQ: a drawn gain curve (Hz, dB), applied with no phase
+/// shift through the short-time Fourier transform.
+pub fn curve_eq(buffer: &AudioBuffer, points: &[(f64, f64)]) -> AudioBuffer {
+    let mut sorted: Vec<(f64, f64)> = points.iter().map(|&(hz, db)| (hz.clamp(10.0, 30_000.0), db.clamp(-30.0, 30.0))).collect();
+    sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let rate = buffer.sample_rate;
+    let gains: Vec<f32> = (0..=FFT_SIZE / 2).map(|k| 10f64.powf(curve_db(&sorted, bin_hz(k, rate).max(1.0)) / 20.0) as f32).collect();
+    let stft = Stft::new();
+    let channels = buffer
+        .channels
+        .iter()
+        .map(|ch| {
+            stft.process(ch, |_, spectrum| {
+                for (bin, g) in spectrum.iter_mut().zip(&gains) {
+                    *bin *= *g;
+                }
+            })
+        })
+        .collect();
+    AudioBuffer::new(rate, channels)
+}
+
 /// 1 well inside `lo..hi`, 0 outside, ramping over `ramp` at both edges.
 fn edge_ramp(x: f32, lo: f32, hi: f32, ramp: f32) -> f32 {
     let rise = ((x - lo) / ramp + 0.5).clamp(0.0, 1.0);
@@ -442,6 +481,22 @@ mod tests {
         let mid = n / 4..3 * n / 4;
         let residual: Vec<f32> = out.channels[0][mid.clone()].iter().zip(&low[mid]).map(|(a, b)| a - b).collect();
         assert!(rms(&residual) < 0.01, "residual {}", rms(&residual));
+    }
+
+    #[test]
+    fn a_drawn_curve_lowers_and_raises_what_it_says() {
+        let rate = 48_000u32;
+        let n = rate as usize;
+        let tone = |f: f32| -> Vec<f32> { (0..n).map(|i| 0.3 * (2.0 * std::f32::consts::PI * f * i as f32 / rate as f32).sin()).collect() };
+        // −12 dB at 100 Hz and below, flat at 1 kHz, +6 dB from 8 kHz.
+        let curve = [(100.0, -12.0), (1000.0, 0.0), (8000.0, 6.0)];
+        assert!((curve_db(&curve, 316.2) + 6.0).abs() < 0.01, "half way on a log axis");
+        let mid = n / 4..3 * n / 4;
+        for (f, want) in [(60.0, -12.0), (1000.0, 0.0), (12_000.0, 6.0)] {
+            let out = curve_eq(&AudioBuffer::new(rate, vec![tone(f)]), &curve);
+            let got = 20.0 * (rms(&out.channels[0][mid.clone()]) / rms(&tone(f)[mid.clone()])).log10();
+            assert!((got - want).abs() < 0.5, "{f} Hz: {got} dB");
+        }
     }
 
     #[test]

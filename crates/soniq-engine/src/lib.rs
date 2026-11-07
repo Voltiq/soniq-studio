@@ -29,7 +29,7 @@ use soniq_io::AudioBuffer;
 
 pub use devices::{DeviceInfo, DeviceOptions, Direction, EngineConfig, device_options, list_devices, output_device_name};
 pub use graph::{
-    CONTROL, ClipNode, ClipWarp, Dest, FxNode, Graph, InstrumentNode, LaneNode, MAX_BLOCK, MAX_RETURNS, ModNode, ModSource, ReturnNode, ScheduledNote,
+    CONTROL, ClipNode, ClipWarp, Dest, FadeShape, FxNode, Graph, InstrumentNode, LaneNode, MAX_BLOCK, MAX_RETURNS, ModNode, ModSource, ReturnNode, ScheduledNote,
     TimedEvent, TrackNode, crossfade_overlaps, db_to_gain, track_gains, track_key,
 };
 pub use tempo::TempoMap;

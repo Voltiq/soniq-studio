@@ -13,7 +13,7 @@ import { WarpControls } from "../components/WarpControls";
 import { trackHeight } from "../state/appearance";
 import { positionBeats, tempoLaneShown, useStore } from "../state/store";
 import { beatAfter, clipSeconds, tempoOf, type TempoMap } from "../state/tempo";
-import { clipLength, projectLength, snapBeats, timelineClips, type Clip, type Track } from "../state/types";
+import { clipLength, projectLength, snapBeats, timelineClips, type Clip, type FadeCurve, type Track } from "../state/types";
 import { AutomationRow, shownLanes } from "./AutomationLane";
 import { TempoRow } from "./TempoLane";
 
@@ -277,7 +277,9 @@ function crossfades(clips: Clip[], tempo: TempoMap): Map<string, number> {
 }
 
 function ClipView({ track, clip, pxPerBeat, selected, xfade }: { track: Track; clip: Clip; pxPerBeat: number; selected: boolean; xfade: number }) {
-  const { selectClip, setView, splitClip, moveClip, trimClip, setClipFades, run, openPianoRoll } = useStore.getState();
+  const { selectClip, setView, splitClip, moveClip, trimClip, setClipFades, run, openPianoRoll, setGroupDrag, moveSelectedClips } = useStore.getState();
+  // Dragged along with another picked clip.
+  const follow = useStore((s) => (selected ? s.groupDrag : null));
   const tempo = useStore((s) => tempoOf(s.project));
   const TRACK_H = useStore((s) => trackHeight(s.density));
   const assetSeconds = useStore((s) => {
@@ -304,6 +306,8 @@ function ClipView({ track, clip, pxPerBeat, selected, xfade }: { track: Track; c
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     e.stopPropagation();
     if (e.button !== 0) return;
+    // Ctrl or Shift picks several clips (to move, delete or duplicate together).
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return selectClip(track.id, clip.id, true);
     selectClip(track.id, clip.id);
     const tool = useStore.getState().tool;
     const beatAt = clip.start + (e.clientX - e.currentTarget.getBoundingClientRect().left) / pxPerBeat;
@@ -320,18 +324,28 @@ function ClipView({ track, clip, pxPerBeat, selected, xfade }: { track: Track; c
     }
     const dx = e.clientX - drag.x;
     const dy = e.clientY - drag.y;
-    setDrag({ ...drag, dx, dy, moved: drag.moved || Math.abs(dx) > 3 || Math.abs(dy) > 3, free: e.altKey });
+    const moved = drag.moved || Math.abs(dx) > 3 || Math.abs(dy) > 3;
+    setDrag({ ...drag, dx, dy, moved, free: e.altKey });
+    // The other picked clips follow on screen.
+    if (moved && drag.mode === "move" && useStore.getState().clipSelection.length) setGroupDrag({ dx, dy });
   };
 
   const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
     const d = drag;
     setDrag(null);
+    setGroupDrag(null);
     if (!d?.moved) return;
     if (d.mode === "move") {
       // The lane under the pointer, if the clip was dragged to another track.
       const lane = document.elementsFromPoint(e.clientX, e.clientY).find((el) => (el as HTMLElement).dataset?.trackId) as HTMLElement | undefined;
       const target = lane?.dataset.trackId ?? track.id;
-      if (target !== track.id || p.start !== clip.start) moveClip(clip.id, target, p.start);
+      const st = useStore.getState();
+      if (st.clipSelection.length && st.pickedClips().includes(clip.id)) {
+        // Several picked: they all move by as much (and as many tracks) as this one.
+        const ids = st.project.tracks.map((t) => t.id);
+        const tracks = ids.indexOf(target) - ids.indexOf(track.id);
+        if (tracks !== 0 || p.start !== clip.start) moveSelectedClips(p.start - clip.start, tracks);
+      } else if (target !== track.id || p.start !== clip.start) moveClip(clip.id, target, p.start);
     } else if (d.mode === "trim-start" || d.mode === "trim-end") {
       trimClip(clip.id, p.start, p.len);
     } else {
@@ -347,7 +361,7 @@ function ClipView({ track, clip, pxPerBeat, selected, xfade }: { track: Track; c
         {
           left: p.start * pxPerBeat + 1,
           width,
-          transform: drag?.moved && drag.mode === "move" ? `translateY(${drag.dy}px)` : undefined,
+          transform: drag?.moved && drag.mode === "move" ? `translateY(${drag.dy}px)` : !drag && follow ? `translate(${follow.dx}px, ${follow.dy}px)` : undefined,
           "--c": trackVar(track.color),
         } as CSSProperties
       }
@@ -386,7 +400,7 @@ function ClipView({ track, clip, pxPerBeat, selected, xfade }: { track: Track; c
               height={body}
               color={color}
             />
-            <FadeOverlay width={width} height={body} fadeIn={fadeInPx} fadeOut={fadeOutPx} />
+            <FadeOverlay width={width} height={body} fadeIn={fadeInPx} fadeOut={fadeOutPx} curve={clip.curve} />
             {xfade > 0 && !drag?.moved && <CrossfadeMark width={Math.min(width, xfade * pxPerBeat)} height={body} />}
           </>
         ) : (
@@ -409,21 +423,35 @@ function ClipView({ track, clip, pxPerBeat, selected, xfade }: { track: Track; c
   );
 }
 
-/** Darkens the part of the clip a fade attenuates, with the fade line on top. */
-function FadeOverlay({ width, height, fadeIn, fadeOut }: { width: number; height: number; fadeIn: number; fadeOut: number }) {
+/** A fade in's gain `x` (0–1) of the way through, for the clip's fade shape (mirrors the engine). */
+function fadeGain(curve: FadeCurve | undefined, x: number): number {
+  if (curve === "equalPower") return Math.sin((x * Math.PI) / 2);
+  if (curve === "sCurve") return 0.5 - 0.5 * Math.cos(x * Math.PI);
+  return x;
+}
+
+/** Darkens the part of the clip a fade attenuates, with the fade line (in its shape) on top. */
+function FadeOverlay({ width, height, fadeIn, fadeOut, curve }: { width: number; height: number; fadeIn: number; fadeOut: number; curve?: FadeCurve }) {
   if (fadeIn < 0.5 && fadeOut < 0.5) return null;
+  const steps = 16;
+  const line = (from: number, len: number, rising: boolean) =>
+    Array.from({ length: steps + 1 }, (_, i) => {
+      const x = i / steps;
+      const g = fadeGain(curve, rising ? x : 1 - x);
+      return `${(from + x * len).toFixed(1)},${((1 - g) * height).toFixed(1)}`;
+    }).join(" ");
   return (
     <svg className="fade-overlay" width={width} height={height} aria-hidden="true">
       {fadeIn >= 0.5 && (
         <>
-          <polygon points={`0,0 ${fadeIn},0 0,${height}`} />
-          <line x1={0} y1={height} x2={fadeIn} y2={0} />
+          <polygon points={`0,0 ${fadeIn},0 ${line(0, fadeIn, true)}`} />
+          <polyline points={line(0, fadeIn, true)} />
         </>
       )}
       {fadeOut >= 0.5 && (
         <>
-          <polygon points={`${width - fadeOut},0 ${width},0 ${width},${height}`} />
-          <line x1={width - fadeOut} y1={0} x2={width} y2={height} />
+          <polygon points={`${width - fadeOut},0 ${width},0 ${line(width - fadeOut, fadeOut, false)}`} />
+          <polyline points={line(width - fadeOut, fadeOut, false)} />
         </>
       )}
     </svg>
@@ -654,6 +682,7 @@ function GroupLane({ group, laneWidth, selected }: { group: Track; laneWidth: nu
 function TrackRow({ track, laneWidth }: { track: Track; laneWidth: number }) {
   const selected = useStore((s) => s.selectedTrackId === track.id);
   const selectedClip = useStore((s) => s.selectedClipId);
+  const clipSelection = useStore((s) => s.clipSelection);
   const pxPerBeat = useStore((s) => s.pxPerBeat);
   const recordingHere = useStore((s) => s.recording && track.arm);
   const tempo = useStore((s) => tempoOf(s.project));
@@ -714,7 +743,14 @@ function TrackRow({ track, laneWidth }: { track: Track; laneWidth: number }) {
         }}
       >
         {clips.map((clip) => (
-          <ClipView key={clip.id} track={track} clip={clip} pxPerBeat={pxPerBeat} selected={clip.id === selectedClip} xfade={overlaps.get(clip.id) ?? 0} />
+          <ClipView
+            key={clip.id}
+            track={track}
+            clip={clip}
+            pxPerBeat={pxPerBeat}
+            selected={clip.id === selectedClip || clipSelection.includes(clip.id)}
+            xfade={overlaps.get(clip.id) ?? 0}
+          />
         ))}
         {recordingHere && <RecordingRegion pxPerBeat={pxPerBeat} />}
       </div>

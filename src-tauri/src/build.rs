@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use soniq_dsp::{AudioFx, External, Instrument, Key, MacroLink, MidiFx, ParamBank, Params, Rack, RackLayer, SampleSlot, Warper};
-use soniq_engine::{ClipNode, ClipWarp, Dest, Follow, FxNode, InstrumentNode, LaneNode, ModNode, ModSource, ScheduledNote, SlotNode, db_to_gain, track_key};
-use soniq_project::{AutoTarget, Clip, ClipContent, Device, DeviceParam, DeviceRole, MODULATOR_TYPES, PLUGIN_TYPE, TempoMap, Track, WarpMode};
+use soniq_engine::{ClipNode, ClipWarp, Dest, FadeShape, Follow, FxNode, InstrumentNode, LaneNode, ModNode, ModSource, ScheduledNote, SlotNode, db_to_gain, track_key};
+use soniq_project::{AutoTarget, Clip, ClipContent, Device, FadeCurve, DeviceParam, DeviceRole, MODULATOR_TYPES, PLUGIN_TYPE, TempoMap, Track, WarpMode};
 
 use crate::session::Pool;
 
@@ -155,7 +155,7 @@ fn clip_notes(clip: &Clip, at: impl Fn(f64) -> u64) -> Vec<ScheduledNote> {
 /// (`in_loop`) from 0 in a session slot. A warped clip spans its beats and
 /// stretches to fit them.
 pub fn audio_node(clip: &Clip, pool: &Pool, timeline: &Timeline, in_loop: bool) -> Option<ClipNode> {
-    let ClipContent::Audio { asset, offset, duration, gain, fade_in, fade_out, warp } = &clip.content else { return None };
+    let ClipContent::Audio { asset, offset, duration, gain, fade_in, fade_out, warp, curve } = &clip.content else { return None };
     let pooled = pool.get(asset)?;
     let rate = timeline.rate;
     let samples = |sec: f64| (sec.max(0.0) * rate).round() as u64;
@@ -169,6 +169,12 @@ pub fn audio_node(clip: &Clip, pool: &Pool, timeline: &Timeline, in_loop: bool) 
     node.gain = db_to_gain(*gain);
     node.fade_in = samples(*fade_in);
     node.fade_out = samples(*fade_out);
+    node.curve = match curve {
+        None => FadeShape::Standard,
+        Some(FadeCurve::Linear) => FadeShape::Linear,
+        Some(FadeCurve::EqualPower) => FadeShape::EqualPower,
+        Some(FadeCurve::SCurve) => FadeShape::SCurve,
+    };
     node.key = track_key(&clip.id);
     if let Some(w) = warp {
         let mode = match w.mode {

@@ -1,4 +1,4 @@
-//! Generators: tones, sweeps, noise, DTMF and silence, as mono audio.
+//! Generators: tones, sweeps, noise, DTMF, rhythm tracks and silence, as mono audio.
 
 use std::f64::consts::TAU;
 
@@ -14,6 +14,18 @@ pub enum Waveform {
     Square,
     Sawtooth,
     Triangle,
+}
+
+/// What a rhythm track's beats sound like.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ClickSound {
+    /// A short noise tick.
+    Tick,
+    /// A pure beep.
+    Beep,
+    /// A woodblock knock.
+    Wood,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,6 +47,8 @@ pub enum Generator {
     /// Telephone keypad tones; `tone` and `gap` in ms.
     Dtmf { digits: String, tone: f64, gap: f64, amplitude: f64 },
     Silence { seconds: f64 },
+    /// A click on every beat for `bars` bars, the first of each bar higher with `accent`.
+    RhythmTrack { bpm: f64, beats_per_bar: u32, bars: u32, sound: ClickSound, accent: bool, amplitude: f64 },
 }
 
 impl Generator {
@@ -45,6 +59,7 @@ impl Generator {
             Generator::Noise { .. } => "Noise",
             Generator::Dtmf { .. } => "DTMF tones",
             Generator::Silence { .. } => "Silence",
+            Generator::RhythmTrack { .. } => "Rhythm track",
         }
     }
 }
@@ -68,11 +83,50 @@ pub fn generate(generator: &Generator, rate: u32) -> AudioBuffer {
         Generator::Noise { color, amplitude, seconds } => noise(*color, frames(*seconds), db_to_gain(*amplitude)),
         Generator::Dtmf { digits, tone, gap, amplitude } => dtmf(digits, frames(tone / 1000.0), frames(gap / 1000.0), sr, db_to_gain(*amplitude)),
         Generator::Silence { seconds } => vec![0.0; frames(*seconds)],
+        Generator::RhythmTrack { bpm, beats_per_bar, bars, sound, accent, amplitude } => {
+            rhythm(bpm.clamp(20.0, 400.0), (*beats_per_bar).clamp(1, 16), (*bars).clamp(1, 999), *sound, *accent, db_to_gain(*amplitude), sr)
+        }
     };
-    if !matches!(generator, Generator::Silence { .. } | Generator::Noise { .. } | Generator::Dtmf { .. }) {
+    if !matches!(generator, Generator::Silence { .. } | Generator::Noise { .. } | Generator::Dtmf { .. } | Generator::RhythmTrack { .. }) {
         declick(&mut out, (0.002 * sr) as usize);
     }
     AudioBuffer::new(rate, vec![out])
+}
+
+/// A click on every beat; sample-exact, so it stays on the grid for hours.
+fn rhythm(bpm: f64, per_bar: u32, bars: u32, sound: ClickSound, accent: bool, gain: f64, sr: f64) -> Vec<f32> {
+    let beat = 60.0 / bpm;
+    let beats = (per_bar * bars) as usize;
+    let total = ((beats as f64 * beat).min(MAX_SECONDS) * sr).round() as usize;
+    let mut out = vec![0.0_f32; total];
+    let mut seed = 0x9e37_79b9_u32;
+    for k in 0..beats {
+        let at = (k as f64 * beat * sr).round() as usize;
+        let strong = accent && k % per_bar as usize == 0;
+        let (len, freq, decay) = match sound {
+            ClickSound::Tick => (0.015, 0.0, 0.003),
+            ClickSound::Beep => (0.06, if strong { 1320.0 } else { 880.0 }, 0.03),
+            ClickSound::Wood => (0.05, if strong { 1250.0 } else { 900.0 }, 0.012),
+        };
+        let level = gain * if accent && !strong { 0.7 } else { 1.0 };
+        for i in 0..((len * sr) as usize).min(total.saturating_sub(at)) {
+            let t = i as f64 / sr;
+            let env = (-t / decay).exp() * (i as f64 / (0.0005 * sr)).min(1.0);
+            let v = match sound {
+                ClickSound::Tick => {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 17;
+                    seed ^= seed << 5;
+                    let noise = f64::from(seed) / f64::from(u32::MAX) * 2.0 - 1.0;
+                    noise * if strong { 1.0 } else { 0.6 }
+                }
+                ClickSound::Beep => (TAU * freq * t).sin(),
+                ClickSound::Wood => (TAU * freq * t).sin() * 0.8 + (TAU * freq * 2.7 * t).sin() * 0.2,
+            };
+            out[at + i] += (v * env * level) as f32;
+        }
+    }
+    out
 }
 
 /// Band-limited waveforms (PolyBLEP), so square and saw do not alias.
@@ -188,6 +242,23 @@ fn declick(x: &mut [f32], ramp: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_rhythm_track_clicks_on_every_beat() {
+        let rate = 48_000;
+        let g = Generator::RhythmTrack { bpm: 120.0, beats_per_bar: 4, bars: 2, sound: ClickSound::Wood, accent: true, amplitude: -6.0 };
+        let out = generate(&g, rate);
+        assert_eq!(out.frames(), 4 * rate as usize, "eight beats at 120 BPM");
+        // Loud right after each beat, quiet just before the next.
+        for k in 0..8 {
+            let at = k * rate as usize / 2;
+            let peak = out.channels[0][at..at + 2400].iter().fold(0.0_f32, |m, s| m.max(s.abs()));
+            assert!(peak > 0.3, "beat {k}: {peak}");
+            if k > 0 {
+                assert!(out.channels[0][at - 100..at].iter().all(|s| s.abs() < 0.01), "silence before beat {k}");
+            }
+        }
+    }
 
     #[test]
     fn tone_has_the_requested_length_and_level() {

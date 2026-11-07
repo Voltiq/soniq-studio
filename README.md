@@ -132,8 +132,10 @@ Releases are built by GitHub Actions from a version tag: see [RELEASING.md](RELE
 - **Linked clips.** `Ctrl+Alt+D` duplicates a MIDI clip as a linked copy, like an FL Studio pattern: edit
   one and every copy changes. Clip › Unlink clip lets one go its own way.
 - **Clip editing.** Drag a clip to move it (also to another track), drag its edges to trim, drag the
-  top corners to fade. Overlapping clips crossfade by themselves. The Split tool or `Ctrl+E` splits at
-  the playhead, `Ctrl+D` duplicates. Edits snap to the grid; hold Alt to place freely.
+  top corners to fade. Overlapping clips crossfade by themselves; Clip › Fades picks the shape (linear,
+  equal power, S-curve). The Split tool or `Ctrl+E` splits at the playhead, `Ctrl+D` duplicates.
+  Ctrl- or Shift-click picks several clips to move, delete or duplicate together, and Edit › Ripple
+  editing closes the gaps they leave. Edits snap to the grid; hold Alt to place freely.
 - **Markers.** The lane under the ruler holds markers (`Ctrl+M` at the playhead) and regions
   (`Ctrl+Shift+M` from the loop range). Drag them, double-click to rename.
 - **Audio editor.** Cut, copy, paste, delete and trim on the selection, snapped to zero crossings.
@@ -143,10 +145,12 @@ Releases are built by GitHub Actions from a version tag: see [RELEASING.md](RELE
   what it needs: centring, a rumble cut, click removal, noise reduction learned from its own quiet
   moments, trimming the silence at the ends, shorter pauses (yours to tick) and a loudness target with
   peaks held under −1 dBFS. Untick anything, preview, fix in one undo step.
-- **Effects and generators.** The Effects menu in the editor has 22 effects with settings and a
+- **Effects and generators.** The Effects menu in the editor has 24 effects with settings and a
   preview: noise reduction (learn the noise first, or automatic), click removal, filters, EQ,
   compressor, limiter, truncate and trim silence, voice leveling, tempo, pitch and speed changes, echo,
-  reverb, normalize, loudness and more. Generate makes tones, sweeps, noise, DTMF and silence.
+  reverb, normalize, loudness, a drawn filter curve, Auto Duck and more; Repair redraws a click or a
+  dropout, and Duplicate or Split New (`Ctrl+Alt+I`) puts the selection on a new track. Generate makes
+  tones, sweeps, noise, DTMF, rhythm tracks and silence.
 - **Macros and batch.** Run a chain of effects on a clip, or on a whole folder of files
   (File › Batch process files). Five macros are built in, Fix my audio among them; make your own.
 - **Export.** `Ctrl+Shift+E` renders the song, the loop region, each region or each track (stems: each

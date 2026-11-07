@@ -59,7 +59,8 @@ function Steps({ macro, onChange }: { macro: Macro; onChange: (steps: Effect[]) 
           <span className="selwrap">
             <select className="select sm" aria-label="Add a step" value="" onChange={(e) => e.target.value && onChange([...macro.steps, defaultEffect(e.target.value as EffectType)])}>
               <option value="">Add a step…</option>
-              {EFFECTS.map((e) => (
+              {/* Auto Duck listens to a track and the curve is drawn: neither fits a macro step. */}
+              {EFFECTS.filter((e) => e.type !== "autoDuck" && e.type !== "curveEq").map((e) => (
                 <option key={e.type} value={e.type}>
                   {e.name}
                 </option>

@@ -124,6 +124,14 @@ export const EFFECTS: EffectSpec[] = [
     defaults: { type: "lowPass", frequency: 12000, slope: 24 },
   },
   {
+    type: "curveEq",
+    name: "Filter curve EQ",
+    group: "Filter & EQ",
+    description: "Draw the EQ you want: any shape of boosts and cuts across the spectrum, with no phase shift.",
+    params: [],
+    defaults: { type: "curveEq", points: [[1000, 0]] },
+  },
+  {
     type: "bassTreble",
     name: "Bass and treble",
     group: "Filter & EQ",
@@ -169,6 +177,20 @@ export const EFFECTS: EffectSpec[] = [
     params: [num("threshold", "Quieter than", -80, -20, 1, "dBFS"), num("minSilence", "Longer than", 0.1, 10, 0.1, "s"), num("keep", "Shorten to", 0, 5, 0.05, "s")],
     defaults: { type: "truncateSilence", threshold: -40, minSilence: 0.5, keep: 0.3 },
     changesLength: true,
+  },
+  {
+    type: "autoDuck",
+    name: "Auto Duck",
+    group: "Dynamics",
+    description: "Turns this audio down wherever another track gets loud: music under a voice-over, for instance.",
+    params: [
+      num("depth", "Duck by", -40, -1, 0.5, "dB"),
+      num("threshold", "When the other track is above", -60, -6, 1, "dBFS"),
+      num("fadeDown", "Fade down", 0, 2, 0.05, "s", { hint: "Starts this long before the other track does." }),
+      num("fadeUp", "Fade up", 0, 3, 0.05, "s"),
+      num("maxPause", "Stay down through pauses up to", 0, 3, 0.1, "s"),
+    ],
+    defaults: { type: "autoDuck", track: "", depth: -12, threshold: -30, fadeDown: 0.5, fadeUp: 0.5, maxPause: 1 },
   },
   {
     type: "trimSilence",
@@ -336,6 +358,10 @@ export function describeEffect(effect: Effect): string {
       return `Level to ${fmt(effect.target, "LUFS")}`;
     case "fixAudio":
       return `Fix my audio · ${fmt(effect.target, "LUFS")}`;
+    case "curveEq":
+      return `Filter curve EQ (${effect.points.length} ${effect.points.length === 1 ? "point" : "points"})`;
+    case "autoDuck":
+      return `Auto Duck ${fmt(effect.depth, "dB")}`;
   }
 }
 
@@ -407,6 +433,29 @@ export interface GeneratorSpec {
 }
 
 export const GENERATORS: GeneratorSpec[] = [
+  {
+    type: "rhythmTrack",
+    name: "Rhythm track",
+    description: "A click on every beat, for counting in or playing along to.",
+    params: [
+      num("bpm", "Tempo", 30, 300, 1, "BPM"),
+      num("beatsPerBar", "Beats per bar", 1, 16, 1),
+      num("bars", "Bars", 1, 400, 1),
+      {
+        id: "sound",
+        label: "Sound",
+        kind: "select",
+        options: [
+          ["wood", "Woodblock"],
+          ["beep", "Beep"],
+          ["tick", "Tick"],
+        ],
+      },
+      { id: "accent", label: "Higher on the first beat", kind: "toggle" },
+      amplitude,
+    ],
+    defaults: { type: "rhythmTrack", bpm: 120, beatsPerBar: 4, bars: 8, sound: "wood", accent: true, amplitude: -6 },
+  },
   {
     type: "tone",
     name: "Tone",

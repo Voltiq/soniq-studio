@@ -1,6 +1,6 @@
 //! The audio callback's work. Nothing in here locks, allocates or blocks.
 
-use std::f32::consts::FRAC_PI_2;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -8,7 +8,7 @@ use cpal::{FromSample, SizedSample};
 use soniq_dsp::{FxContext, NoteEvent};
 use soniq_io::AudioBuffer;
 
-use crate::graph::{CONTROL, ClipClock, ClipNode, ClipWarp, Graph, MAX_BLOCK, MAX_RETURNS, MAX_TRACKS, Notes, ReturnNode, Timing, TrackNode, adopt_chain};
+use crate::graph::{CONTROL, ClipClock, ClipNode, ClipWarp, FadeShape, Graph, MAX_BLOCK, MAX_RETURNS, MAX_TRACKS, Notes, ReturnNode, Timing, TrackNode, adopt_chain};
 use crate::launch::{Launched, SlotContent, SlotNode, Wait, next_line};
 use crate::meters::PeakMeter;
 use crate::meters::Safety;
@@ -936,11 +936,20 @@ struct Envelope {
     fade_out: u64,
     xfade_in: u64,
     xfade_out: u64,
+    curve: FadeShape,
 }
 
 impl Envelope {
     fn of(clip: &ClipNode) -> Self {
-        Self { gain: clip.gain, len: clip.len, fade_in: clip.fade_in, fade_out: clip.fade_out, xfade_in: clip.xfade_in, xfade_out: clip.xfade_out }
+        Self {
+            gain: clip.gain,
+            len: clip.len,
+            fade_in: clip.fade_in,
+            fade_out: clip.fade_out,
+            xfade_in: clip.xfade_in,
+            xfade_out: clip.xfade_out,
+            curve: clip.curve,
+        }
     }
 
     fn flat(&self) -> bool {
@@ -954,18 +963,19 @@ impl Envelope {
             return g;
         }
         let to_end = self.len - at;
+        let shape = self.curve;
         if at < self.fade_in {
-            g *= at as f32 / self.fade_in as f32;
+            g *= shape.gain(at as f32 / self.fade_in as f32, false);
         }
         if to_end < self.fade_out {
-            g *= to_end as f32 / self.fade_out as f32;
+            g *= shape.gain(to_end as f32 / self.fade_out as f32, false);
         }
-        // Equal power, so the overlap keeps its loudness.
+        // Standard crossfades are equal power, so the overlap keeps its loudness.
         if at < self.xfade_in {
-            g *= (at as f32 / self.xfade_in as f32 * FRAC_PI_2).sin();
+            g *= shape.gain(at as f32 / self.xfade_in as f32, true);
         }
         if to_end < self.xfade_out {
-            g *= (to_end as f32 / self.xfade_out as f32 * FRAC_PI_2).sin();
+            g *= shape.gain(to_end as f32 / self.xfade_out as f32, true);
         }
         g
     }

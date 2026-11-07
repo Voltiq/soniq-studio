@@ -342,9 +342,122 @@ pub fn level(input: &AudioBuffer, target: f64, max_gain: f64) -> Result<(AudioBu
     Ok((out, spread))
 }
 
+// ---------- Repair ----------
+
+/// The longest stretch Repair redraws, in seconds.
+pub const REPAIR_MAX: f64 = 0.25;
+
+/// Burg's method: the coefficients `a[1..=order]` of an all-pole model of
+/// `x`, predicting `x[n] = -Σ a[k]·x[n-k]`.
+fn burg(x: &[f64], order: usize) -> Vec<f64> {
+    let n = x.len();
+    let mut a = vec![1.0];
+    let (mut f, mut b) = (x.to_vec(), x.to_vec());
+    for m in 0..order.min(n.saturating_sub(1)) {
+        let (mut num, mut den) = (0.0, 0.0);
+        for i in m + 1..n {
+            num += f[i] * b[i - 1];
+            den += f[i] * f[i] + b[i - 1] * b[i - 1];
+        }
+        let k = if den > 1e-300 { -2.0 * num / den } else { 0.0 };
+        let mut next = a.clone();
+        next.push(0.0);
+        for (j, coeff) in next.iter_mut().enumerate().skip(1) {
+            *coeff += k * a.get(m + 1 - j).copied().unwrap_or(0.0);
+        }
+        a = next;
+        for i in (m + 1..n).rev() {
+            let (fi, bi) = (f[i], b[i - 1]);
+            f[i] = fi + k * bi;
+            b[i] = bi + k * fi;
+        }
+    }
+    a
+}
+
+/// Continues `history` by `count` samples with an all-pole model of it.
+fn predict(history: &[f64], count: usize) -> Vec<f64> {
+    if history.len() < 8 {
+        return vec![history.last().copied().unwrap_or(0.0); count];
+    }
+    let order = (history.len() / 4).clamp(4, 48);
+    let a = burg(history, order);
+    let mut run = history.to_vec();
+    for _ in 0..count {
+        let n = run.len();
+        let next: f64 = -(1..a.len()).map(|k| a[k] * run[n - k]).sum::<f64>();
+        run.push(next.clamp(-4.0, 4.0));
+    }
+    run.split_off(history.len())
+}
+
+/// Redraws `start..end` (frames) from the sound around it, the way
+/// Audacity's Repair does for a click or a dropout: a model of the audio
+/// before predicts forwards, a model of the audio after predicts backwards,
+/// and the two are blended across the gap.
+pub fn repair(buffer: &AudioBuffer, start: usize, end: usize) -> Result<AudioBuffer, String> {
+    let n = buffer.frames();
+    let (start, end) = (start.min(n), end.min(n));
+    let gap = end.saturating_sub(start);
+    if gap == 0 {
+        return Err("Select the damaged stretch first.".into());
+    }
+    if gap as f64 > REPAIR_MAX * f64::from(buffer.sample_rate) {
+        return Err("Repair redraws a short stretch (a quarter second at most): select just the damage.".into());
+    }
+    let context = (4 * gap).max(512);
+    let (before_from, after_to) = (start.saturating_sub(context), (end + context).min(n));
+    if start - before_from < 16 && after_to - end < 16 {
+        return Err("Repair needs some sound around the damage to learn from.".into());
+    }
+    let mut out = buffer.clone();
+    for (ch, src) in out.channels.iter_mut().zip(&buffer.channels) {
+        let before: Vec<f64> = src[before_from..start].iter().map(|s| f64::from(*s)).collect();
+        let mut after: Vec<f64> = src[end..after_to].iter().map(|s| f64::from(*s)).collect();
+        after.reverse();
+        let forward = predict(&before, gap);
+        let mut backward = predict(&after, gap);
+        backward.reverse();
+        for i in 0..gap {
+            // Lean on whichever side has sound to learn from.
+            let w = match (before.len() >= 16, after.len() >= 16) {
+                (true, true) => {
+                    let x = (i as f64 + 0.5) / gap as f64;
+                    0.5 - 0.5 * (x * std::f64::consts::PI).cos()
+                }
+                (true, false) => 0.0,
+                _ => 1.0,
+            };
+            ch[start + i] = (forward[i] * (1.0 - w) + backward[i] * w) as f32;
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repair_redraws_a_damaged_stretch_from_around_it() {
+        let rate = 44_100;
+        let clean: Vec<f32> = (0..rate as usize / 4)
+            .map(|i| {
+                let t = i as f32 / rate as f32;
+                0.4 * (std::f32::consts::TAU * 330.0 * t).sin() + 0.15 * (std::f32::consts::TAU * 990.0 * t).sin()
+            })
+            .collect();
+        let mut damaged = clean.clone();
+        let (a, b) = (5000, 5300);
+        for (i, s) in damaged[a..b].iter_mut().enumerate() {
+            *s = if i % 3 == 0 { 0.9 } else { -0.7 };
+        }
+        let fixed = repair(&AudioBuffer::new(rate, vec![damaged]), a, b).unwrap();
+        let err = fixed.channels[0][a..b].iter().zip(&clean[a..b]).map(|(x, y)| f64::from(x - y).powi(2)).sum::<f64>() / (b - a) as f64;
+        assert!(err.sqrt() < 0.02, "rms error {}", err.sqrt());
+        assert_eq!(fixed.channels[0][..a], clean[..a], "nothing else changes");
+        assert!(repair(&fixed, 0, rate as usize / 2).is_err(), "too long");
+    }
 
     fn tone(freq: f32, db: f64, rate: u32, seconds: f64) -> Vec<f32> {
         let amp = db_to_gain(db) as f32;

@@ -3,6 +3,7 @@ import { defaultEffect, effectSpec } from "../state/effects";
 import { formatClock } from "../state/format";
 import { editorTarget, useStore } from "../state/store";
 import type { Effect, EffectType } from "../state/types";
+import { CurveEditor } from "./CurveEditor";
 import { FixPanel } from "./FixDialog";
 import { Icon } from "./Icon";
 import { ParamForm } from "./ParamForm";
@@ -20,7 +21,18 @@ function EffectPanel({ type, onClose }: { type: EffectType; onClose: () => void 
   const profile = useStore((s) => s.noiseProfileSeconds);
   const { applyEffects, previewEffects, stopPreview, captureNoiseProfile } = useStore.getState();
   const sel = selection && selection.end - selection.start > 0.001 ? selection : null;
-  const needsProfile = type === "noiseReduction" && profile === null;
+  const needsProfile = (type === "noiseReduction" && profile === null) || (effect.type === "autoDuck" && !effect.track);
+  // Auto Duck: the tracks it can listen to (not the clip's own), as a stable list.
+  const ownTrack = useStore((s) => editorTarget(s)?.track.id ?? "");
+  const tracksKey = useStore((s) => s.project.tracks.map((t) => `${t.id}\u0001${t.name}`).join("\u0002"));
+  const others = tracksKey
+    .split("\u0002")
+    .filter(Boolean)
+    .map((row) => {
+      const [id, name] = row.split("\u0001");
+      return { id, name };
+    })
+    .filter((t) => t.id !== ownTrack);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -75,6 +87,26 @@ function EffectPanel({ type, onClose }: { type: EffectType; onClose: () => void 
               <ParamForm specs={spec.params} target={effect} onChange={change} />
             </div>
           </div>
+        ) : effect.type === "curveEq" ? (
+          <CurveEditor points={effect.points} onChange={(points) => change({ ...effect, points })} />
+        ) : effect.type === "autoDuck" ? (
+          <>
+            <label className="setting wide">
+              <span className="lab">Listen to</span>
+              <span className="selwrap">
+                <select className="select" value={effect.track} onChange={(e) => change({ ...effect, track: e.target.value })}>
+                  {!effect.track && <option value="">Pick the track to duck under…</option>}
+                  {others.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                <Icon name="chevronDown" size={14} />
+              </span>
+            </label>
+            <ParamForm specs={spec.params} target={effect} onChange={change} />
+          </>
         ) : (
           <ParamForm specs={spec.params} target={effect} onChange={change} />
         )}

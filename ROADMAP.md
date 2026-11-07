@@ -181,7 +181,7 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 - [x] **P0** Delete clips and tracks (undoable)
 - [x] **P0** Move clips (also to another track of the same kind), trim either edge (audio never runs past its file), split (Split tool or `Ctrl+E` at the playhead), duplicate (`Ctrl+D`), fade in and out with corner handles; snap to the grid, hold Alt to bypass it
 - [x] **P0** Crossfades: where a clip overlaps the one before it, both crossfade with equal power across the overlap (shown as an X); a clip that sits entirely inside another is layered
-- [ ] **P0** Ripple edit; multi-clip selection; adjustable crossfade curves
+- [x] **P0** Ripple edit; multi-clip selection; adjustable crossfade curves (Phase 7B)
 - [x] **P0** Import audio from a file dialog or by dragging files from Explorer onto a track (at the drop position) or below the tracks (new tracks); files are resampled to the engine rate
 - [x] **P0** Import MIDI files (dialog or drag from Explorer, at the drop position); new MIDI clips by double-clicking a MIDI track or with the Draw tool; double-click a MIDI clip to open the piano roll
 - [x] **P0** Marker lane (Audacity labels): point markers and regions, added at the playhead (`Ctrl+M`), from the loop range (`Ctrl+Shift+M`) or by double-clicking the lane; drag to move, drag region edges, double-click to rename, Delete removes; undoable and saved with the project
@@ -209,12 +209,12 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 - [x] **P0** Destructive edits on a selection of real samples, with undo: Normalize (to −1 dBFS), Amplify +3 dB (warns about overs), Fade in, Fade out, Reverse, Silence
 - [x] **P0** Cut, copy, paste (at the cursor or over the selection), delete and trim to selection, with optional zero-crossing snapping (on by default) so edits never click
 - [x] **P0** Loudness normalisation to a LUFS target (BS.1770 integrated loudness; −14, −16, −19 or −23)
-- [ ] **P0** Duplicate and split new inside the editor
+- [x] **P0** Duplicate and split new inside the editor (Phase 7B)
 - [x] **P0** Zoom down to single samples (Ctrl + wheel, buttons, zoom to selection, an overview strip to scroll) with exact min/max waveforms from Rust at every level, and a Draw tool that redraws samples by hand
 - [x] **P0** Effects, each with a dialog: Noise Reduction (profile-based spectral gating), Click Removal, Remove DC Offset, High-pass and Low-pass (Butterworth, 12–48 dB/oct), Bass and Treble, 10-band Graphic EQ, Compressor (soft knee, make-up gain), look-ahead Limiter, Truncate Silence, Change Tempo and Change Pitch (WSOLA time-stretch), Change Speed, Echo, Reverb (Freeverb), Normalize, Loudness Normalize, Amplify
-- [ ] **P0** Effects still to come: EQ filter curve, Repair, Auto Duck
+- [x] **P0** Effects: EQ filter curve, Repair, Auto Duck (Phase 7B)
 - [x] **P0** Generators: tone and chirp (sine, square, sawtooth, triangle, band-limited), noise (white, pink, brown), DTMF, silence; into the clip at the cursor or as a new clip at the playhead
-- [ ] **P0** Generators still to come: rhythm track
+- [x] **P0** Generators: rhythm track (Phase 7B)
 - [ ] **P0** Analysis: plot spectrum, contrast (WCAG audio), find clipping, beat finder, label sounds
 - [x] **P0** Preview for every effect: up to 10 s of the selection is processed and played through the engine, without changing anything
 - [ ] **P1** Real-time (non-destructive) effect stacks on clips
@@ -532,11 +532,17 @@ Every P0 item the earlier phases left open, so nothing a first-time user leans o
 - [x] Rust tests (229 in total) now also cover the limiter (never over the ceiling, right up to it, off lets overs through, a broken block silenced, exports untouched) and monitoring (44.1 into 48 kHz at the right pitch without gaps; clocks 0.2 % apart for 30 s with a steady backlog)
 - [ ] Not tried yet: unplugging a device, changing the default, and monitoring a real microphone (the checks never make a sound or open the input). Checked in the desktop app: the watch leaves a healthy device alone (no restarts in 12 s on AirPods); the Settings switch turns the limiter off and on at once and is remembered; LIM sits under CLIP on the master meter, dark while nothing is limited
 
-**Part B — editing** (§5.3, §5.5)
-- [ ] Ripple edit; selecting several clips (move, delete, duplicate together); crossfade curves (linear, equal power, S-curve)
-- [ ] Audio editor: Duplicate, Split New (to a new track)
-- [ ] Effects: Auto Duck, Repair (a short damaged stretch redrawn from around it), an EQ with a drawn filter curve
-- [ ] Generator: a rhythm track (a click pattern at a tempo, for a number of bars)
+**Part B ✅ — editing** (§5.3, §5.5)
+- [x] Several clips at once: Ctrl- or Shift-click picks more (again to drop one); dragging one moves them all, on screen as they go, by the same beats and tracks (refused if any would land on a track of another kind or before the song); Delete and Ctrl+D act on all of them, each one undo step. After Ctrl+D the copies are the selection, so pressing it again carries on along the timeline
+- [x] Ripple editing (Edit › Ripple editing, remembered): deleting clips closes their gaps on their tracks (several at once, each counted where it was), duplicating pushes the clips after the block along, trimming a clip's end moves what follows. Other tracks, markers and automation stay put
+- [x] Fade shapes (Clip menu, for the picked clips): standard (straight fades, equal-power crossfades, as before), linear, equal power or S-curve, for the fades and the crossfades alike; the arrangement draws the shape
+- [x] Audio editor: Duplicate (Ctrl+D with a selection, or Edit › Duplicate to a new track) and Split New (Ctrl+Alt+I) put the selection on a new track just below, at the same time; Split New leaves a gap. No audio is copied: the new clip plays the same file
+- [x] Repair (Effect menu): a short damaged stretch (a click, a dropout; a quarter second at most) is redrawn from the sound around it, by autoregressive models predicting forwards from before and backwards from after, blended across the gap
+- [x] Filter curve EQ: draw the curve (click to add, drag, double-click to remove; presets: flat, low cut, telephone, less mud, presence, air), applied with no phase shift
+- [x] Auto Duck: turns the clip down by a depth wherever another track (picked in the dialog, heard through its devices) is above a threshold, fading down before it and up after it, and staying down through short pauses
+- [x] Generator: rhythm track (tempo, beats per bar, bars, woodblock, beep or tick, the first beat higher), sample-exact
+- [x] Rust tests (237 in total) now also cover moving, deleting and duplicating several clips, ripple (one gap, two gaps, duplicate, trim), Duplicate and Split New, fade shapes saved and cleared, Repair (rms error under 0.02 on a 300-sample burst), the curve EQ at three frequencies, Auto Duck (fade down, through a breath, back up), and the rhythm track's beats
+- [ ] Not tried yet: listening. Checked in the desktop app (silent): a generated rhythm track; two picked clips duplicated with ripple, deleted with ripple and moved together, landing where the tests say; S-curve fades set on the picked ones; Ctrl+D walking on; Repair on a planted click (two of three left); Duplicate and Split New onto "(copy)" and "(split)" tracks at the right times with a gap in the original; Auto Duck of the music under the host ("Ducked 2 times"); the curve EQ dialog with the Telephone preset, applied as one undo step; Auto Duck's track list leaving out the clip's own track and waiting for a pick; no console errors
 
 **Part C — analysis and meters** (§5.5, §5.8)
 - [ ] Analysis: plot spectrum, contrast (foreground against background, WCAG audio), find clipping, beat finder, label sounds (labels as markers)
@@ -703,3 +709,5 @@ Settings › Keyboard shortcuts switches to Audacity's or Live's keys, and chang
 | Essentials ↔ Pro | `Ctrl+Shift+P` |
 | History (every step, to go back to) | `Ctrl+H` |
 | Sketch mode: play the loop / record a layer | `Space` / `R` |
+| Pick several clips | Ctrl- or Shift-click |
+| Audio editor: Duplicate / Split New (the selection onto a new track) | `Ctrl+D` / `Ctrl+Alt+I` |

@@ -2,6 +2,7 @@
 //! noise profiles, spectral edits, the spectrogram, sample drawing,
 //! generators, macros and batch processing.
 
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -11,7 +12,7 @@ use soniq_project::{Asset, Clip, Track, TrackKind, new_id};
 use tauri::State;
 use tauri::ipc::{Channel, Response};
 
-use crate::commands::{clip_audio, replace_clip_audio};
+use crate::commands::{ClipAudio, clip_audio, replace_clip_audio};
 use crate::session::{AppState, PoolAsset, ProjectReply, lock};
 use crate::settings::{self, Macro};
 
@@ -20,9 +21,49 @@ type CmdResult<T> = Result<T, String>;
 /// The longest stretch an effect preview plays, in seconds.
 const PREVIEW_SECONDS: f64 = 10.0;
 
-fn run_effects(state: &AppState, input: &AudioBuffer, effects: &[Effect]) -> CmdResult<Processed> {
+fn run_effects(state: &AppState, input: &AudioBuffer, effects: &[Effect], control: Option<&AudioBuffer>) -> CmdResult<Processed> {
     let profile = lock(&state.noise_profile).clone();
-    soniq_io::apply_effects(input, effects, &EffectContext { noise_profile: profile.as_ref() })
+    soniq_io::apply_effects(input, effects, &EffectContext { noise_profile: profile.as_ref(), control })
+}
+
+/// What Auto Duck listens to: the other track over the same stretch of the
+/// song as `range` of the clip, through its devices, at the clip's rate.
+fn duck_control(state: &AppState, clip: &str, effects: &[Effect], source: &ClipAudio, range: &Range<usize>) -> CmdResult<Option<AudioBuffer>> {
+    let Some(track) = effects.iter().find_map(|e| match e {
+        Effect::AutoDuck { track, .. } => Some(track.clone()),
+        _ => None,
+    }) else {
+        return Ok(None);
+    };
+    let (graph, bpm, beats_per_bar, from, to) = {
+        let session = lock(&state.session);
+        let project = &session.project;
+        let (ti, ci) = project.find_clip(clip).ok_or("That clip no longer exists.")?;
+        if project.tracks[ti].id == track {
+            return Err("Auto Duck listens to another track: pick one other than this clip's.".into());
+        }
+        project.track(&track).ok_or("The track to listen to no longer exists.")?;
+        let c = &project.tracks[ti].clips[ci];
+        let tempo = project.tempo_map();
+        let rate = f64::from(source.native.sample_rate);
+        let at = |frame: usize| tempo.seconds_at(c.beat_after(&tempo, c.start, frame as f64 / rate - source.offset));
+        let graph = state.graph_of(&crate::freeze::alone(project, &track, None), &session.pool, false);
+        (graph, project.bpm, project.beats_per_bar, at(range.start), at(range.end))
+    };
+    let mut audio = soniq_engine::render_offline(graph, state.engine.sample_rate(), bpm, beats_per_bar, from, to.max(from));
+    if audio.sample_rate != source.native.sample_rate {
+        audio = soniq_io::resample(&audio, source.native.sample_rate);
+    }
+    Ok(Some(audio))
+}
+
+/// Redraws a short damaged stretch (a click, a dropout) from the sound around it.
+#[tauri::command]
+pub async fn clip_repair(state: State<'_, AppState>, clip: String, start: f64, end: f64) -> CmdResult<ProjectReply> {
+    let source = clip_audio(&state, &clip)?;
+    let range = source.range(Some(start), Some(end), false);
+    let edited = soniq_io::repair(&source.native, range.start, range.end)?;
+    replace_clip_audio(&state, &clip, &source, edited, None, "Repair")
 }
 
 /// The pooled audio of an asset at its own rate.
@@ -56,7 +97,8 @@ pub async fn clip_effect(
     if range.is_empty() {
         return Err("Select some audio first.".into());
     }
-    let processed = run_effects(&state, &soniq_io::extract(&source.native, range.clone()), &effects)?;
+    let control = duck_control(&state, &clip, &effects, &source, &range)?;
+    let processed = run_effects(&state, &soniq_io::extract(&source.native, range.clone()), &effects, control.as_ref())?;
     let changed = processed.buffer.frames() != range.len();
     let new_duration = changed.then(|| source.duration - source.seconds(range.len()) + processed.buffer.duration());
     let edited = soniq_io::insert(&source.native, range.start, range.len(), &processed.buffer);
@@ -96,8 +138,9 @@ pub async fn clip_effect_preview(state: State<'_, AppState>, clip: String, effec
     let mut range = source.range(start, end, false);
     let most = (PREVIEW_SECONDS * f64::from(source.native.sample_rate)) as usize;
     range.end = range.end.min(range.start + most);
+    let control = duck_control(&state, &clip, &effects, &source, &range)?;
     let selection = soniq_io::extract(&source.native, range);
-    let processed = if effects.is_empty() { selection } else { run_effects(&state, &selection, &effects)?.buffer };
+    let processed = if effects.is_empty() { selection } else { run_effects(&state, &selection, &effects, control.as_ref())?.buffer };
     let rate = state.engine.sample_rate();
     let audio = if processed.sample_rate == rate { processed } else { soniq_io::resample(&processed, rate) };
     let seconds = audio.duration();
@@ -395,7 +438,7 @@ pub async fn batch_process(
 
 fn process_file(state: &AppState, file: &Path, steps: &[Effect], output: &BatchOutput, folder: &Path, written: &[String]) -> CmdResult<PathBuf> {
     let input = soniq_io::decode_file(file).map_err(|e| e.to_string())?;
-    let processed = if steps.is_empty() { input } else { run_effects(state, &input, steps)?.buffer };
+    let processed = if steps.is_empty() { input } else { run_effects(state, &input, steps, None)?.buffer };
     let stem = file.file_stem().map_or_else(|| "audio".into(), |s| s.to_string_lossy().into_owned());
     let ext = output.encoding.format.extension();
     // Inputs with the same name (song.wav, song.mp3) must not overwrite each other's results.

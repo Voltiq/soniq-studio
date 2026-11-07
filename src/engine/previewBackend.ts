@@ -296,6 +296,24 @@ function reduce(p: Project, op: Op): { project: Project; label: string; created?
       return { project: { ...p, beatsPerBar: clamp(op.beatsPerBar, 1, 32) }, label: "Time signature" };
     case "setKey":
       return { project: { ...p, key: op.key }, label: "Key" };
+    case "deleteClips": {
+      // The simple form here; ripple editing is the desktop app's.
+      const gone = new Set(op.clips);
+      const next = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => !gone.has(c.id)) })) };
+      return { project: pruneAssets(next), label: op.clips.length === 1 ? "Delete clip" : `Delete ${op.clips.length} clips` };
+    }
+    case "setFadeCurve": {
+      const picked = new Set(op.clips);
+      const tracks = p.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => (picked.has(c.id) && c.kind === "audio" ? { ...c, curve: op.curve ?? undefined } : c)),
+      }));
+      return { project: { ...p, tracks }, label: "Fade shape" };
+    }
+    case "moveClips":
+    case "duplicateClips":
+    case "extractToTrack":
+      throw new Error("Moving and copying several clips needs the desktop app (npm run tauri dev).");
     case "deleteClip": {
       const name = p.tracks.flatMap((t) => t.clips).find((c) => c.id === op.clip)?.name;
       if (!name) throw new Error("That clip no longer exists.");
@@ -629,6 +647,7 @@ export function createPreviewBackend(): Backend {
     effect: needsEngine,
     previewEffect: needsEngine,
     fixAnalyse: needsEngine,
+    repair: needsEngine,
     podcastMeasure: async () => [],
     podcastLevel: needsEngine,
     podcastDuck: needsEngine,

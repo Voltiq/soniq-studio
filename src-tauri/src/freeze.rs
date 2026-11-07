@@ -17,7 +17,7 @@ const SILENCE: f32 = 3.2e-5;
 
 /// The song with only `track` heard, straight into a bare master: its clips
 /// and devices before its fader. With `clip`, that clip is all it plays.
-fn alone(project: &Project, track: &str, clip: Option<&str>) -> Project {
+pub(crate) fn alone(project: &Project, track: &str, clip: Option<&str>) -> Project {
     let mut song = project.clone();
     for t in &mut song.tracks {
         t.solo = false;
