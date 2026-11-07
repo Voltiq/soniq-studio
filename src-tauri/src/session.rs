@@ -481,15 +481,18 @@ impl AppState {
     }
 
     /// Opens the configured input and hands its monitoring feed to the
-    /// engine, when both run at the same rate.
+    /// engine, which brings it to the output's rate and clock.
     pub fn open_input(&self) -> Result<(), String> {
         let config = lock(&self.engine_config).clone();
         self.recorder.open(&config, self.engine.transport_handle())?;
-        match self.recorder.take_monitor_feed() {
-            Some((feed, rate)) if rate == self.engine.sample_rate() => self.engine.set_monitor(Some(feed)),
-            _ => self.engine.set_monitor(None),
-        }
+        self.engine.set_monitor(self.recorder.take_monitor_feed().map(|(feed, _)| feed));
         Ok(())
+    }
+
+    /// Some audio track is armed or always monitors, so the input should be open.
+    pub fn input_wanted(&self) -> bool {
+        let session = lock(&self.session);
+        session.project.tracks.iter().any(|t| t.kind == TrackKind::Audio && (t.arm || t.monitor == Monitor::In))
     }
 
     pub fn close_input(&self) {

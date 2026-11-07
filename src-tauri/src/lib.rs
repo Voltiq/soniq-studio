@@ -2,6 +2,7 @@ mod build;
 mod commands;
 mod crash;
 mod demo;
+mod devicewatch;
 mod files;
 mod freeze;
 mod midi;
@@ -92,6 +93,7 @@ pub fn run() {
             let inputs = MidiInputs::start(midi_settings.disabled_inputs, Arc::new(move |_port, event| handle.state::<AppState>().midi_in(event)));
             *session::lock(&app.state::<AppState>().midi) = Some(inputs);
             commands::spawn_autosave(app.handle().clone());
+            devicewatch::spawn(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -100,6 +102,7 @@ pub fn run() {
             commands::project_undo,
             commands::project_redo,
             commands::project_new,
+            commands::engine_safety,
             crash::crash_status,
             crash::crash_enable,
             crash::crash_seen,

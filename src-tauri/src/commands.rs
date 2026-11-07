@@ -593,18 +593,36 @@ pub async fn audio_device_options(host: Option<String>, output: Option<String>) 
 /// Reopens the audio device with new settings and remembers them.
 #[tauri::command]
 pub async fn engine_configure(state: State<'_, AppState>, config: EngineConfig) -> CmdResult<EngineStatus> {
-    let old_rate = state.engine.sample_rate();
-    let status = match state.engine.start(&config) {
-        Ok(status) => status,
+    let previous = std::mem::replace(&mut *lock(&state.engine_config), config.clone());
+    match apply_engine(&state, &config) {
+        Ok(status) => {
+            settings::save(&state.dirs.config, &config)?;
+            Ok(status)
+        }
         Err(err) => {
             // Fall back to what worked before so the user is never left silent.
-            let previous = lock(&state.engine_config).clone();
-            let _ = state.engine.start(&previous);
-            return Err(err);
+            *lock(&state.engine_config) = previous.clone();
+            let _ = apply_engine(&state, &previous);
+            Err(err)
         }
-    };
-    *lock(&state.engine_config) = config.clone();
-    settings::save(&state.dirs.config, &config)?;
+    }
+}
+
+/// The safety limiter before the speakers, on or off (at once, and remembered).
+#[tauri::command]
+pub fn engine_safety(state: State<'_, AppState>, on: bool) -> CmdResult<()> {
+    state.engine.set_safety(on);
+    let mut config = lock(&state.engine_config);
+    config.safety_limiter_off = !on;
+    settings::save(&state.dirs.config, &config)
+}
+
+/// (Re)opens the output for `config` (the chosen device, or the default if it
+/// is missing) and brings everything along: the input and its monitoring,
+/// the plugins' and the pool's sample rate, and the song.
+pub(crate) fn apply_engine(state: &AppState, config: &EngineConfig) -> CmdResult<EngineStatus> {
+    let old_rate = state.engine.sample_rate();
+    let status = state.engine.start(config)?;
     // An open input follows the new settings (unless a take is running); the
     // new output stream also needs a fresh monitoring feed.
     if state.recorder.is_open() && !state.recorder.is_recording() {
@@ -1085,6 +1103,10 @@ pub struct MeterFrame {
     pub clips: Vec<(String, ClipState)>,
     /// Loudness, peaks and the spectrum of the master, while asked for.
     pub analysis: Option<soniq_io::Reading>,
+    /// How far the safety limiter turned the master down since the last frame, in dB.
+    pub limiter: f32,
+    /// A block of NaN or infinity (a broken plugin) was silenced.
+    pub silenced: bool,
 }
 
 #[cfg(test)]
@@ -1161,7 +1183,10 @@ pub fn meters_subscribe(app: AppHandle, state: State<'_, AppState>, channel: Cha
                 state.collect_launched();
                 let (tracks, master) = state.engine.meters().take_all();
                 let t = state.engine.transport();
+                let (limiter, silenced) = state.engine.take_safety();
                 let frame = MeterFrame {
+                    limiter,
+                    silenced,
                     position: t.position_seconds(),
                     playing: t.is_playing(),
                     tracks,

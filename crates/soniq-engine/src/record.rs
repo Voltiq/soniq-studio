@@ -18,7 +18,7 @@ use serde::Serialize;
 
 use crate::devices::{EngineConfig, find_host, find_input};
 use crate::meters::PeakMeter;
-use crate::render::MonitorFeed;
+use crate::monitor::MonitorFeed;
 use crate::transport::Transport;
 
 /// Raw takes end in this; the app turns them into per-track files and deletes
@@ -56,6 +56,8 @@ struct Shared {
     /// Some track plays the input, so the callback feeds the monitor ring.
     monitoring: AtomicBool,
     input_latency_us: AtomicU64,
+    /// The driver said the input is gone.
+    lost: AtomicBool,
 }
 
 struct InputHandle {
@@ -97,6 +99,7 @@ impl Recorder {
                 dropped: AtomicU64::new(0),
                 monitoring: AtomicBool::new(false),
                 input_latency_us: AtomicU64::new(0),
+                lost: AtomicBool::new(false),
             }),
             input: Mutex::new(None),
             writer: Mutex::new(None),
@@ -124,12 +127,17 @@ impl Recorder {
         let mut input = lock(&self.input);
         let handle = input.as_mut()?;
         let samples = handle.monitor.take()?;
-        Some((MonitorFeed::new(samples, usize::from(handle.channels)), handle.sample_rate))
+        Some((MonitorFeed::new(samples, usize::from(handle.channels), handle.sample_rate), handle.sample_rate))
     }
 
     /// Whether the input callback feeds the monitoring ring.
     pub fn set_monitoring(&self, on: bool) {
         self.shared.monitoring.store(on, Relaxed);
+    }
+
+    /// Whether the driver reported the input gone since the last call.
+    pub fn take_lost(&self) -> bool {
+        self.shared.lost.swap(false, Relaxed)
     }
 
     pub fn is_open(&self) -> bool {
@@ -352,6 +360,7 @@ where
     f32: FromSample<T>,
 {
     let (transport, meter, shared, mut producer, mut monitor, channels) = parts;
+    let gone = Arc::clone(&shared);
     device
         .build_input_stream(
             config,
@@ -391,7 +400,12 @@ where
                     let _ = producer.push(s.to_sample::<f32>());
                 }
             },
-            |err| eprintln!("audio input error: {err}"),
+            move |err| {
+                eprintln!("audio input error: {err}");
+                if matches!(err, cpal::StreamError::DeviceNotAvailable) {
+                    gone.lost.store(true, Relaxed);
+                }
+            },
             None,
         )
         .map_err(|e| format!("Could not open the input: {e}"))

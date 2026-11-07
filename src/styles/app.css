@@ -6900,3 +6900,9 @@ code {
   flex: 1 1 240px;
   min-width: 0;
 }
+
+/* The safety limiter's light, under the clip light on the master meter. */
+.meter-clip.meter-limit[data-on="true"] {
+  background: var(--warning);
+  color: #111318;
+}

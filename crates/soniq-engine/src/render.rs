@@ -11,25 +11,12 @@ use soniq_io::AudioBuffer;
 use crate::graph::{CONTROL, ClipClock, ClipNode, ClipWarp, Graph, MAX_BLOCK, MAX_RETURNS, MAX_TRACKS, Notes, ReturnNode, Timing, TrackNode, adopt_chain};
 use crate::launch::{Launched, SlotContent, SlotNode, Wait, next_line};
 use crate::meters::PeakMeter;
+use crate::meters::Safety;
 use crate::metronome::Metronome;
+pub use crate::monitor::MonitorFeed;
 use crate::tempo::TempoMap;
 use crate::transport::Transport;
 use crate::workers::Workers;
-
-/// Input audio for monitoring: interleaved samples from the input stream.
-pub struct MonitorFeed {
-    samples: rtrb::Consumer<f32>,
-    channels: usize,
-    /// One block per input channel, de-interleaved.
-    input: Vec<Vec<f32>>,
-}
-
-impl MonitorFeed {
-    pub fn new(samples: rtrb::Consumer<f32>, channels: usize) -> Self {
-        let channels = channels.max(1);
-        Self { samples, channels, input: vec![vec![0.0; MAX_BLOCK]; channels] }
-    }
-}
 
 /// Messages to the audio thread besides new graphs.
 pub enum Control {
@@ -84,6 +71,8 @@ pub struct Links {
     /// `analysing` is on: for the loudness meters and the spectrum.
     pub analysis: Option<rtrb::Producer<f32>>,
     pub analysing: Arc<AtomicBool>,
+    /// The speakers' last guard; `None` for offline renders, which are not limited.
+    pub safety: Option<Arc<Safety>>,
 }
 
 impl Links {
@@ -107,7 +96,42 @@ impl Links {
             workers: None,
             analysis: None,
             analysing: Arc::new(AtomicBool::new(false)),
+            safety: None,
         }
+    }
+}
+
+/// The safety limiter's ceiling: −0.3 dBFS.
+const CEILING: f32 = 0.966_05;
+
+/// The last thing before the device: a block with NaN or infinity becomes
+/// silence; then, if on, peaks over the ceiling are turned down at once and
+/// let back up over about 100 ms.
+fn protect(left: &mut [f32], right: &mut [f32], gain: &mut f32, release: f32, safety: &Safety) {
+    if left.iter().chain(right.iter()).any(|s| !s.is_finite()) {
+        left.fill(0.0);
+        right.fill(0.0);
+        *gain = 1.0;
+        safety.silence();
+        return;
+    }
+    if !safety.enabled() {
+        *gain = 1.0;
+        return;
+    }
+    let mut lowest = 1.0_f32;
+    for (l, r) in left.iter_mut().zip(right.iter_mut()) {
+        *gain += (1.0 - *gain) * release;
+        let peak = l.abs().max(r.abs());
+        if peak * *gain > CEILING {
+            *gain = CEILING / peak;
+        }
+        lowest = lowest.min(*gain);
+        *l *= *gain;
+        *r *= *gain;
+    }
+    if lowest < 0.999 {
+        safety.reduced(-20.0 * lowest.log10());
     }
 }
 
@@ -128,6 +152,9 @@ pub struct Renderer {
     preview: Option<Arc<AudioBuffer>>,
     preview_pos: usize,
     monitor: Option<Box<MonitorFeed>>,
+    /// The safety limiter's gain now, and how fast it comes back up per sample.
+    safety_gain: f32,
+    safety_release: f32,
     /// Where the timeline continues if nothing jumps; `None` while stopped.
     expected: Option<u64>,
     /// The transport's tempo throughout, for graphs without a tempo track.
@@ -153,6 +180,8 @@ impl Renderer {
             preview: None,
             preview_pos: 0,
             monitor: None,
+            safety_gain: 1.0,
+            safety_release: 1.0 - (-1.0 / (0.1 * f64::from(sample_rate.max(1)))).exp() as f32,
             fallback: TempoMap::constant(120.0, f64::from(sample_rate)),
         }
     }
@@ -176,6 +205,10 @@ impl Renderer {
         while done < frames {
             let n = (frames - done).min(MAX_BLOCK);
             self.render_block(n);
+            if let Some(safety) = self.links.safety.as_deref() {
+                let [left, right] = &mut self.master;
+                protect(&mut left[..n], &mut right[..n], &mut self.safety_gain, self.safety_release, safety);
+            }
             let [left, right] = &self.master;
             for i in 0..n {
                 let frame = &mut out[(done + i) * channels..(done + i + 1) * channels];
@@ -266,7 +299,10 @@ impl Renderer {
                     self.links.previewing.store(true, Ordering::Relaxed);
                 }
                 Control::StopPreview => self.end_preview(),
-                Control::Monitor(feed) => {
+                Control::Monitor(mut feed) => {
+                    if let Some(feed) = feed.as_mut() {
+                        feed.set_output_rate(self.sample_rate);
+                    }
                     if let Some(old) = std::mem::replace(&mut self.monitor, feed) {
                         let _ = self.links.garbage.push(Garbage::Monitor(old));
                     }
@@ -404,34 +440,15 @@ impl Renderer {
         self.finish_master(n);
     }
 
-    /// Reads one block of monitored input. Returns whether any track plays it.
+    /// Reads one block of monitored input, at the output's rate and clock.
+    /// Returns whether any track plays it.
     fn pull_monitor(&mut self, n: usize) -> bool {
         let Some(feed) = self.monitor.as_mut() else { return false };
-        let channels = feed.channels;
-        let mut available = feed.samples.slots() / channels;
-        let wanted = self.graph.tracks.iter().any(|t| t.monitor.is_some());
-        let mut skip = if wanted { 0 } else { available };
-        // Too far behind (a hiccup, or the input started first): drop the
-        // backlog so monitoring stays tight.
-        if wanted && available > 2 * n + 512 {
-            skip = available - n;
-        }
-        for _ in 0..skip * channels {
-            let _ = feed.samples.pop();
-        }
-        available -= skip;
-        if !wanted {
+        if !self.graph.tracks.iter().any(|t| t.monitor.is_some()) {
+            feed.idle();
             return false;
         }
-        let take = available.min(n);
-        for i in 0..take {
-            for ch in &mut feed.input {
-                ch[i] = feed.samples.pop().unwrap_or(0.0);
-            }
-        }
-        for ch in &mut feed.input {
-            ch[take..n].fill(0.0);
-        }
+        feed.render(n);
         true
     }
 
@@ -1083,7 +1100,7 @@ mod tests {
     fn monitored_input_plays_while_stopped() {
         let transport = Arc::new(Transport::new());
         transport.set_sample_rate(1000);
-        let (mut input_tx, input_rx) = rtrb::RingBuffer::new(64);
+        let (mut input_tx, input_rx) = rtrb::RingBuffer::new(256);
         let (mut controls_tx, controls) = rtrb::RingBuffer::new(4);
         let mut track = TrackNode::new([1.0, 1.0], vec![], Arc::new(PeakMeter::default()));
         track.monitor = Some((1, 1));
@@ -1092,15 +1109,22 @@ mod tests {
         let mut r = Renderer::new(transport, 1000, links);
         r.take_new_graphs();
         r.prime();
-        let _ = controls_tx.push(Control::Monitor(Some(Box::new(MonitorFeed::new(input_rx, 2)))));
-        // Stereo input: channel 2 carries 0.5.
-        for _ in 0..8 {
-            let _ = input_tx.push(0.1);
-            let _ = input_tx.push(0.5);
-        }
+        let _ = controls_tx.push(Control::Monitor(Some(Box::new(MonitorFeed::new(input_rx, 2, 1000)))));
+        // Stereo input: channel 2 carries 0.5. It arrives in deliveries of 40
+        // frames; the feed waits for a backlog that covers one before playing.
+        let deliver = |tx: &mut rtrb::Producer<f32>| {
+            for _ in 0..40 {
+                let _ = tx.push(0.1);
+                let _ = tx.push(0.5);
+            }
+        };
         let mut out = vec![0.0_f32; 16];
+        deliver(&mut input_tx);
         r.process(&mut out, 2);
-        assert_eq!(&out[..4], &[0.5, 0.5, 0.5, 0.5]);
+        assert_eq!(&out[..4], &[0.0; 4], "building the backlog");
+        deliver(&mut input_tx);
+        r.process(&mut out, 2);
+        assert!(out.iter().all(|s| (s - 0.5).abs() < 1e-6), "{out:?}");
     }
 
     #[test]
@@ -1118,6 +1142,44 @@ mod tests {
 
     fn graph_with(clips: Vec<ClipNode>, gain: [f32; 2]) -> Graph {
         Graph::new(vec![TrackNode::new(gain, clips, Arc::new(PeakMeter::default()))], 1.0)
+    }
+
+    #[test]
+    fn the_safety_limiter_keeps_the_speakers_under_the_ceiling() {
+        let (mut r, t) = setup(graph_with(vec![constant_clip(0, 4000, 1.0)], [4.0, 4.0]));
+        let safety = Arc::new(Safety::default());
+        r.links.safety = Some(Arc::clone(&safety));
+        r.prime();
+        t.set_playing(true);
+        let mut out = vec![0.0_f32; 2000];
+        r.process(&mut out, 2);
+        assert!(out.iter().all(|s| s.abs() <= CEILING + 1e-6), "never over −0.3 dBFS");
+        assert!(out[1000..].iter().all(|s| s.abs() > 0.95), "but right up to it");
+        let (reduction, silenced) = safety.take();
+        assert!(reduction > 12.0 && !silenced, "{reduction}");
+        // Switched off, the overs go through (the device clips them).
+        safety.set_enabled(false);
+        r.process(&mut out, 2);
+        assert!(out.iter().any(|s| s.abs() > 3.0));
+    }
+
+    #[test]
+    fn a_broken_block_is_silenced_and_offline_renders_are_not_limited() {
+        let (mut r, t) = setup(graph_with(vec![constant_clip(0, 4000, f32::NAN)], [1.0, 1.0]));
+        let safety = Arc::new(Safety::default());
+        r.links.safety = Some(Arc::clone(&safety));
+        r.prime();
+        t.set_playing(true);
+        let mut out = vec![1.0_f32; 200];
+        r.process(&mut out, 2);
+        assert!(out.iter().all(|s| *s == 0.0));
+        assert!(safety.take().1, "it says so");
+        // No safety on offline renders (exports keep what the mix does).
+        let (mut r, t) = setup(graph_with(vec![constant_clip(0, 4000, 1.0)], [4.0, 4.0]));
+        r.prime();
+        t.set_playing(true);
+        r.process(&mut out, 2);
+        assert!(out.iter().any(|s| s.abs() > 3.0));
     }
 
     #[test]

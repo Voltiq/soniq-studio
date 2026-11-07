@@ -1,7 +1,7 @@
 //! Audio device discovery and stream setup across every host API cpal supports.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::{BufferSize, FromSample, SampleFormat, SampleRate, SizedSample, SupportedBufferSize};
@@ -52,6 +52,8 @@ pub struct EngineConfig {
     pub record_offset_ms: f64,
     /// Cores to spread the mix over; `None` uses all but one (up to eight).
     pub cores: Option<u32>,
+    /// The safety limiter before the speakers is switched off.
+    pub safety_limiter_off: bool,
 }
 
 const COMMON_RATES: [u32; 6] = [44_100, 48_000, 88_200, 96_000, 176_400, 192_000];
@@ -113,6 +115,13 @@ pub(crate) fn find_host(name: Option<&str>) -> cpal::Host {
         .unwrap_or_else(cpal::default_host)
 }
 
+/// The output the engine would open for `config` right now: the chosen
+/// device if it is there, else the system default.
+pub fn output_device_name(config: &EngineConfig) -> Option<String> {
+    let host = find_host(config.host.as_deref());
+    find_output(&host, config.output.as_deref())?.name().ok()
+}
+
 fn find_output(host: &cpal::Host, name: Option<&str>) -> Option<cpal::Device> {
     name.and_then(|name| host.output_devices().ok()?.find(|d| d.name().ok().as_deref() == Some(name)))
         .or_else(|| host.default_output_device())
@@ -147,6 +156,10 @@ pub(crate) struct StreamParts {
     /// From rendering a sample to hearing it, in µs, as the driver reports it.
     pub output_latency_us: Arc<AtomicU32>,
     pub links: Links,
+    /// Counts callbacks: if it stops moving, the device has gone quiet.
+    pub alive: Arc<AtomicU64>,
+    /// The driver said the device is gone.
+    pub lost: Arc<AtomicBool>,
 }
 
 /// Opens the configured output. Settings the device does not support fall
@@ -206,11 +219,13 @@ where
     let channels = usize::from(config.channels.max(1));
     let buffer_frames = parts.buffer_frames;
     let latency = parts.output_latency_us;
+    let (alive, lost) = (parts.alive, parts.lost);
     let mut renderer = Renderer::new(parts.transport, config.sample_rate.0, parts.links);
     device
         .build_output_stream(
             config,
             move |data: &mut [T], info: &cpal::OutputCallbackInfo| {
+                alive.fetch_add(1, Ordering::Relaxed);
                 buffer_frames.store((data.len() / channels) as u32, Ordering::Relaxed);
                 let stamp = info.timestamp();
                 if let Some(ahead) = stamp.playback.duration_since(&stamp.callback) {
@@ -218,7 +233,12 @@ where
                 }
                 renderer.process(data, channels);
             },
-            |err| eprintln!("audio stream error: {err}"),
+            move |err| {
+                eprintln!("audio stream error: {err}");
+                if matches!(err, cpal::StreamError::DeviceNotAvailable) {
+                    lost.store(true, Ordering::Relaxed);
+                }
+            },
             None,
         )
         .map_err(|e| format!("Could not open the audio stream: {e}"))

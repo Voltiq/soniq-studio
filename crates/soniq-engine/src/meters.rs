@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, Mutex};
 
@@ -29,10 +29,51 @@ impl PeakMeter {
     }
 }
 
+/// The last stage before the speakers: a brick-wall limiter at −0.3 dBFS (on
+/// unless switched off) and a guard that silences a block holding NaN or
+/// infinity (a broken plugin) instead of letting it reach the speakers.
+pub struct Safety {
+    enabled: AtomicBool,
+    /// The most gain reduction since the last read, in dB (non-negative f32 bits).
+    reduction: AtomicU32,
+    /// A block was silenced since the last read.
+    silenced: AtomicBool,
+}
+
+impl Default for Safety {
+    fn default() -> Self {
+        Self { enabled: AtomicBool::new(true), reduction: AtomicU32::new(0), silenced: AtomicBool::new(false) }
+    }
+}
+
+impl Safety {
+    pub fn set_enabled(&self, on: bool) {
+        self.enabled.store(on, Relaxed);
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.enabled.load(Relaxed)
+    }
+
+    pub(crate) fn reduced(&self, db: f32) {
+        self.reduction.fetch_max(db.max(0.0).to_bits(), Relaxed);
+    }
+
+    pub(crate) fn silence(&self) {
+        self.silenced.store(true, Relaxed);
+    }
+
+    /// The most gain reduction (dB) and whether anything was silenced, since the last read.
+    pub fn take(&self) -> (f32, bool) {
+        (f32::from_bits(self.reduction.swap(0, Relaxed)), self.silenced.swap(false, Relaxed))
+    }
+}
+
 /// Every meter the engine writes, and what each track's session plays, keyed by track id.
 #[derive(Default)]
 pub struct Meters {
     pub master: Arc<PeakMeter>,
+    pub safety: Arc<Safety>,
     tracks: Mutex<HashMap<String, Arc<PeakMeter>>>,
     clips: Mutex<HashMap<String, Arc<ClipStatus>>>,
 }

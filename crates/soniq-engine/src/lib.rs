@@ -12,6 +12,7 @@ mod graph;
 mod launch;
 mod meters;
 mod metronome;
+mod monitor;
 mod offline;
 mod record;
 mod render;
@@ -26,14 +27,14 @@ use std::thread::{self, JoinHandle};
 use serde::Serialize;
 use soniq_io::AudioBuffer;
 
-pub use devices::{DeviceInfo, DeviceOptions, Direction, EngineConfig, device_options, list_devices};
+pub use devices::{DeviceInfo, DeviceOptions, Direction, EngineConfig, device_options, list_devices, output_device_name};
 pub use graph::{
     CONTROL, ClipNode, ClipWarp, Dest, FxNode, Graph, InstrumentNode, LaneNode, MAX_BLOCK, MAX_RETURNS, ModNode, ModSource, ReturnNode, ScheduledNote,
     TimedEvent, TrackNode, crossfade_overlaps, db_to_gain, track_gains, track_key,
 };
 pub use tempo::TempoMap;
 pub use launch::{ClipState, ClipStatus, Follow, Launched, SlotNode};
-pub use meters::{Meters, PeakMeter};
+pub use meters::{Meters, PeakMeter, Safety};
 pub use offline::render_offline;
 pub use record::{InputStatus, Recorder, TAKE_SUFFIX, Take};
 pub use render::{ALL_TRACKS, LiveEvent, MonitorFeed, Renderer};
@@ -86,6 +87,10 @@ pub struct AudioEngine {
     workers: Mutex<Option<Arc<Workers>>>,
     /// The master's sound goes to the analysis queue.
     analysing: Arc<AtomicBool>,
+    /// Output callbacks so far; the device watch sees a stalled device by it.
+    alive: Arc<AtomicU64>,
+    /// The driver reported the output gone.
+    lost: Arc<AtomicBool>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -105,7 +110,29 @@ impl AudioEngine {
             stream: Mutex::new(None),
             workers: Mutex::new(None),
             analysing: Arc::new(AtomicBool::new(false)),
+            alive: Arc::new(AtomicU64::new(0)),
+            lost: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Output callbacks so far: if this stops moving while the stream runs, the device went quiet.
+    pub fn callbacks(&self) -> u64 {
+        self.alive.load(Ordering::Relaxed)
+    }
+
+    /// Whether the driver reported the output gone since the last call.
+    pub fn take_lost(&self) -> bool {
+        self.lost.swap(false, Ordering::Relaxed)
+    }
+
+    /// Switches the safety limiter before the speakers on or off, at once.
+    pub fn set_safety(&self, on: bool) {
+        self.meters.safety.set_enabled(on);
+    }
+
+    /// The safety limiter's readings since the last call: the most gain reduction (dB), and whether a broken block was silenced.
+    pub fn take_safety(&self) -> (f32, bool) {
+        self.meters.safety.take()
     }
 
     /// Opens (or reopens) the output described by `config`. `cpal::Stream` is
@@ -123,6 +150,8 @@ impl AudioEngine {
         let (ready_tx, ready_rx) = mpsc::channel::<Result<EngineStatus, String>>();
         let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>();
         self.previewing.store(false, Ordering::Relaxed);
+        self.meters.safety.set_enabled(!config.safety_limiter_off);
+        self.lost.store(false, Ordering::Relaxed);
         let wanted = workers::worker_count(config.cores);
         let pool = {
             let mut slot = lock(&self.workers);
@@ -146,7 +175,10 @@ impl AudioEngine {
                 workers: (!pool.is_empty()).then_some(pool),
                 analysis: Some(analysis_tx),
                 analysing: Arc::clone(&self.analysing),
+                safety: Some(Arc::clone(&self.meters.safety)),
             },
+            alive: Arc::clone(&self.alive),
+            lost: Arc::clone(&self.lost),
         };
         let config = config.clone();
 

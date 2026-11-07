@@ -173,7 +173,9 @@ Releases are built by GitHub Actions from a version tag: see [RELEASING.md](RELE
   song or the demo, or follow a lesson: a card points at the control each step needs and moves on once
   you have done it.
 - **Audio settings.** Choose the driver, output, sample rate, buffer size and how many cores mix. The
-  choice is remembered.
+  choice is remembered. A safety limiter keeps anything over −0.3 dBFS from reaching your ears (LIM on
+  the master meter), and if a device is unplugged Soniq stops, carries on with the system default and
+  goes back to yours when it returns.
 - **UI.** Graphiq design tokens, Arrangement, Session, Mixer, Audio editor and Piano roll views, device
   chains, Essentials and Pro modes, a command palette (`Ctrl+K`) and shortcuts. Settings › Appearance
   picks the theme, the accent (or your own colour), one of four track colour sets, and comfortable or

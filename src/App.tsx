@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect } from "react";
@@ -24,7 +25,7 @@ import { ToolRail } from "./components/ToolRail";
 import { TopBar } from "./components/TopBar";
 import { TransportBar } from "./components/TransportBar";
 import { backend } from "./engine/backend";
-import { engine, inTauri } from "./engine/bridge";
+import { engine, inTauri, type DeviceEvent } from "./engine/bridge";
 import { ingestFrame, simulateMeters } from "./state/meters";
 import { AUDIO_EXTENSIONS, MIDI_EXTENSIONS, positionBeats, useStore } from "./state/store";
 import { tempoOf } from "./state/tempo";
@@ -89,11 +90,21 @@ function useEngine() {
     let revisionSeen = -1;
     let refreshing = false;
     let launchesSeen = "";
+    let silencedAt = -1e9;
     engine.subscribeMeters((frame) => {
       const s = useStore.getState();
       ingestFrame(frame, new Set(s.project.tracks.filter((t) => t.arm && t.kind === "audio").map((t) => t.id)));
       s.syncFromEngine(frame.position);
       if (frame.previewing !== s.previewing) s.setPreviewing(frame.previewing);
+      // A broken plugin sent NaN or infinity: say so, once in a while.
+      if (frame.silenced && performance.now() - silencedAt > 10_000) {
+        silencedAt = performance.now();
+        s.toast({
+          tone: "warning",
+          title: "Something sent broken audio",
+          detail: "A device or plugin produced invalid samples; Soniq silenced them instead of playing them. Switch devices off one by one to find it.",
+        });
+      }
       // Launch states re-render the session only when they change; progress
       // goes through clipProgress, like the meters.
       const launches = JSON.stringify(frame.clips.map(([id, c]) => [id, c.playing, c.queued, c.stopping, c.arrangement]));
@@ -114,6 +125,22 @@ function useEngine() {
     });
     if (!inTauri) return;
     let live = true;
+    // Devices coming and going: the engine has already moved; say where to.
+    const unlistenDevices = listen<DeviceEvent>("audio-device", ({ payload }) => {
+      const s = useStore.getState();
+      if ("stopped" in payload && payload.stopped) s.setPlaying(false);
+      const stopped = "stopped" in payload && payload.stopped ? " Playback stopped." : "";
+      if (payload.kind === "lost")
+        s.toast({ tone: "warning", title: `${payload.previous || "The audio output"} is gone`, detail: `Playing on ${payload.device} now.${stopped}` });
+      else if (payload.kind === "switched") s.toast({ tone: "info", title: `Now playing on ${payload.device}`, detail: `Instead of ${payload.previous}.${stopped}` });
+      else if (payload.kind === "noOutput")
+        s.toast({ tone: "danger", title: "No audio output", detail: `${payload.error} Soniq keeps looking, and plays as soon as one is there.${stopped}`, sticky: true });
+      else if (payload.kind === "inputLost") {
+        if (s.recording) void s.stopRecording(false);
+        s.toast({ tone: "warning", title: `${payload.device || "The audio input"} is gone`, detail: "Recording stopped and kept up to here. It opens again when it is back." });
+      } else s.toast({ tone: "success", title: `${payload.device} is back`, detail: "The input is open again." });
+      void poll();
+    });
     const poll = () =>
       Promise.all([engine.status(), engine.inputStatus()])
         .then(([status, input]) => {
@@ -127,6 +154,7 @@ function useEngine() {
     return () => {
       live = false;
       window.clearInterval(id);
+      void unlistenDevices.then((fn) => fn());
     };
   }, []);
 

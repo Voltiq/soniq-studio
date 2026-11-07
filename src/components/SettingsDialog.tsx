@@ -520,6 +520,25 @@ function Settings({ onClose }: { onClose: () => void }) {
               </Select>
             </div>
             <p className="muted">Tracks are shared out over the cores while they play; more cores help songs with many tracks and heavy plugins.</p>
+            <div className="setting switch-row">
+              <button
+                className="switch sm"
+                type="button"
+                role="switch"
+                aria-checked={!config.safetyLimiterOff}
+                aria-labelledby="safety-label"
+                onClick={() => {
+                  const on = !!config.safetyLimiterOff;
+                  setConfig({ ...config, safetyLimiterOff: !on });
+                  void engine.safety(on);
+                }}
+              />
+              <span id="safety-label">
+                Safety limiter: nothing reaches your speakers or headphones above −0.3 dBFS, whatever a plugin or a feedback loop does. Exports are not
+                touched. The <b>lim</b> light on the master meter shows when it works.
+              </span>
+            </div>
+            <p className="muted">If the output is unplugged, Soniq stops and carries on with the system default; it goes back to your choice when it returns.</p>
             {options && options.bufferSizes.length === 0 && (
               <p className="muted">This driver picks its own buffer size. ASIO and WASAPI exclusive mode for lower latency are planned.</p>
             )}

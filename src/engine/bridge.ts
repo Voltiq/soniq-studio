@@ -46,7 +46,17 @@ export interface EngineConfig {
   recordOffsetMs: number;
   /** Cores to spread the mix over; null uses all but one (up to eight). */
   cores?: number | null;
+  /** The safety limiter before the speakers is switched off. */
+  safetyLimiterOff?: boolean;
 }
+
+/** What the device watch reports (event "audio-device"). */
+export type DeviceEvent =
+  | { kind: "lost"; previous: string; device: string; stopped: boolean }
+  | { kind: "switched"; previous: string; device: string; stopped: boolean }
+  | { kind: "noOutput"; error: string; stopped: boolean }
+  | { kind: "inputLost"; device: string }
+  | { kind: "inputBack"; device: string };
 
 export interface InputStatus {
   open: boolean;
@@ -76,6 +86,10 @@ export interface MeterFrame {
   clips: [string, ClipState][];
   /** The master's loudness, peaks and spectrum, while the meters panel is open. */
   analysis?: AnalysisReading | null;
+  /** How far the safety limiter turned the master down since the last frame, in dB. */
+  limiter?: number;
+  /** A block of NaN or infinity (a broken plugin) was silenced. */
+  silenced?: boolean;
 }
 
 /** The master measured as it plays (mirrors `soniq_io::Reading`). */
@@ -124,6 +138,8 @@ export const engine = {
   status: () => (inTauri ? invoke<EngineStatus>("engine_status") : Promise.resolve(null)),
   config: () => (inTauri ? invoke<EngineConfig>("engine_config") : Promise.resolve(null)),
   configure: (config: EngineConfig) => invoke<EngineStatus>("engine_configure", { config }),
+  /** The safety limiter before the speakers, on or off at once. */
+  safety: (on: boolean) => (inTauri ? invoke<void>("engine_safety", { on }) : Promise.resolve()),
   devices: () => (inTauri ? invoke<DeviceInfo[]>("audio_devices") : Promise.resolve([] as DeviceInfo[])),
   deviceOptions: (host: string | null, output: string | null) => invoke<DeviceOptions>("audio_device_options", { host, output }),
   inputStatus: () => (inTauri ? invoke<InputStatus>("input_status") : Promise.resolve(null)),

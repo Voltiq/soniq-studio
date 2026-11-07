@@ -150,8 +150,8 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 - [x] **P0** List the input and output devices of every host API
 - [x] **P0** Audio settings: choose the driver, output device, sample rate and buffer size, see output latency in ms; remembered across launches *(input choice comes with recording in phase 2)*
 - [x] **P0** Mix tracks and play audio clips from the pool: sample-accurate clip playback, gain and balance pan with click-free smoothing, mute and solo, master fader, sample-accurate loop
-- [ ] **P0** Master safety limiter
-- [ ] **P0** Automatic device recovery when a device is unplugged or the default device changes
+- [x] **P0** Master safety limiter (Phase 7A)
+- [x] **P0** Automatic device recovery when a device is unplugged or the default device changes (Phase 7A)
 - [ ] **P1** ASIO and WASAPI exclusive mode for low latency; JACK and PipeWire on Linux
 - [x] **P1** Plugin delay compensation across the whole graph: tracks, groups, returns and the master's chain; mixer automation, recording and offline renders follow it *(sends from inside a group and sidechain keys are not compensated yet)*
 - [x] **P1** Multicore graph processing: tracks shared over a worker pool, bit-identical to one core; the number of cores in Settings
@@ -167,7 +167,7 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 - [x] **P0** Input monitoring for each audio track: off (the default, so a laptop mic never howls), while armed, or always; played through the track's fader and pan
 - [x] **P0** Punch in and out at the loop range, with one bar of pre-roll; recording stops by itself after the punch-out point
 - [x] **P0** Recording latency compensation: takes move earlier by the round trip the driver reports, plus a manual offset in the audio settings; the file keeps the whole take so the clip edge can be dragged back
-- [ ] **P0** Monitoring when the input and output run at different sample rates (needs a drift-correcting resampler; the UI says so for now)
+- [x] **P0** Monitoring when the input and output run at different sample rates, or on two devices whose clocks drift apart (Phase 7A)
 - [ ] **P1** Loop recording into take lanes and comping (swipe to comp)
 - [x] **P1** MIDI recording onto every armed MIDI track at once (with count-in and punch); notes held by the sustain pedal last until it lifts; the new clip layers over what is already there
 - [x] **P1** MIDI recording modes (Transport menu): a new clip, overdub into the clip under the playhead, or replace its notes in the recorded range; with the loop on, every pass is folded into the loop range
@@ -522,6 +522,31 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 - [ ] Code signing: not set up (no certificate yet), so SmartScreen warns on the unsigned setup; RELEASING.md says how to add a certificate or Azure Trusted Signing, and Apple's Developer ID for macOS (also needed to notarise)
 - [ ] Not tried yet: installing the setup (built and signed for updates here, not installed on this machine), an update from one release to the next, and the macOS and Linux builds (best effort on CI until tested). Checked in the desktop app: the Help menu; the one-time "Keep crash reports?" question; an interface error kept as a report, listed and shown in Help › Crash reports; About shows the version; the daily check stays quiet when it cannot reach a release, and a manual check says so plainly
 
+### Phase 7 — The P0 gaps
+Every P0 item the earlier phases left open, so nothing a first-time user leans on is missing.
+
+**Part A ✅ — safety** (§5.1, §5.2)
+- [x] Safety limiter: the last stage before the device (after the master chain, the click and previews): peaks over −0.3 dBFS are turned down at once and let back up over about 100 ms; a block holding NaN or infinity (a broken plugin) becomes silence, with a message. On by default (Settings › Audio, at once, remembered); **LIM** lights on the master meter while it works, CLIP still shows the overs it caught. Offline renders and exports are never limited
+- [x] Device recovery: once a second a watch notices an output the driver reports gone or whose callbacks stopped, the device you chose coming back while Soniq plays elsewhere, or (following the system default) a new default. It reopens the right device and sends the song, input, plugins' and pool's sample rate over again. Playback stops on any switch, as a phone does when headphones come out, and a message says where the sound went; with no output at all it keeps trying. A lost input closes (a recording stops and keeps what it got) and opens again when it is back and still wanted
+- [x] Monitoring across rates and clocks: the monitored input is resampled to the output rate (cubic) with a small, steady backlog kept by nudging the ratio up to ±0.3 %, so a USB microphone at 44.1 kHz monitors through 48 kHz headphones, and two devices whose clocks drift stay together for hours without clicks or growing delay
+- [x] Rust tests (229 in total) now also cover the limiter (never over the ceiling, right up to it, off lets overs through, a broken block silenced, exports untouched) and monitoring (44.1 into 48 kHz at the right pitch without gaps; clocks 0.2 % apart for 30 s with a steady backlog)
+- [ ] Not tried yet: unplugging a device, changing the default, and monitoring a real microphone (the checks never make a sound or open the input). Checked in the desktop app: the watch leaves a healthy device alone (no restarts in 12 s on AirPods); the Settings switch turns the limiter off and on at once and is remembered; LIM sits under CLIP on the master meter, dark while nothing is limited
+
+**Part B — editing** (§5.3, §5.5)
+- [ ] Ripple edit; selecting several clips (move, delete, duplicate together); crossfade curves (linear, equal power, S-curve)
+- [ ] Audio editor: Duplicate, Split New (to a new track)
+- [ ] Effects: Auto Duck, Repair (a short damaged stretch redrawn from around it), an EQ with a drawn filter curve
+- [ ] Generator: a rhythm track (a click pattern at a tempo, for a number of bars)
+
+**Part C — analysis and meters** (§5.5, §5.8)
+- [ ] Analysis: plot spectrum, contrast (foreground against background, WCAG audio), find clipping, beat finder, label sounds (labels as markers)
+- [ ] A live spectrum in the EQ; gain-reduction meters on the compressor, gate, glue, limiter and de-esser
+
+**Part D — library and drums** (§5.7, §5.12)
+- [ ] The browser indexes your sample and preset folders: search, tags, favourites, recent items
+- [ ] Audition samples in time with the song's tempo (and key, for tonal ones) before adding them
+- [ ] Drum Rack: more pads in pages, an effect chain and sends for each pad
+
 ---
 
 ## 7. Replacement checklists
@@ -603,7 +628,8 @@ soniq-studio/
 │  │                            (sandbox.rs), the app's side and the engine node (client.rs),
 │  │                            shared memory, protocol; examples/ build two CLAP and two VST3
 │  │                            test plugins
-│  └─ soniq-engine/             renderer (instruments, live notes, crossfades, warped clips,
+│  └─ soniq-engine/             renderer (instruments, live notes, crossfades, warped clips, the
+│                               safety limiter; monitor.rs: input at the output's rate and clock;
 │                               preview, monitoring, groups, the analysis tap), workers (the
 │                               multicore pool), tempo map, graph (automation, modulators),
 │                               launch (session clips), transport, devices, recorder, meters,
@@ -625,6 +651,7 @@ soniq-studio/
 │  │                            macros and recent songs on disk
 │  ├─ templates.rs              the built-in song templates and the user's own
 │  ├─ crash.rs                  opt-in crash reports (the panic hook, listing and reading them)
+│  ├─ devicewatch.rs            device recovery: lost, returning and new default outputs; lost inputs
 │  ├─ podcast.rs                leveling speakers, ducking music, chapters and chapters files
 │  └─ demo.rs                   the demo song
 └─ src/

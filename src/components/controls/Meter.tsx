@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { meterLevels } from "../../state/meters";
+import { meterLevels, safetyActivity } from "../../state/meters";
 
 /** Linear level → meter height. −60 dBFS is the floor, 0 dBFS sits at 91 %, +6 at the top. */
 function levelToFrac(level: number): number {
@@ -20,6 +20,7 @@ export function Meter({ id, label, width = 6, showClip }: MeterProps) {
   const fill = useRef<HTMLSpanElement>(null);
   const hold = useRef<HTMLSpanElement>(null);
   const clip = useRef<HTMLSpanElement>(null);
+  const limit = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     let raf = 0;
@@ -40,6 +41,15 @@ export function Meter({ id, label, width = 6, showClip }: MeterProps) {
       }
       if (level >= 1) clipAt = t;
       if (clip.current) clip.current.dataset.on = t - clipAt < 2000 ? "true" : "false";
+      if (limit.current) {
+        const on = t - safetyActivity.at < 1500;
+        if (limit.current.dataset.on !== String(on)) {
+          limit.current.dataset.on = String(on);
+          limit.current.title = on
+            ? `The safety limiter is turning the master down (up to ${safetyActivity.db.toFixed(1)} dB) to keep it under −0.3 dBFS`
+            : "Safety limiter: lights when it keeps the master under −0.3 dBFS";
+        }
+      }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -51,6 +61,11 @@ export function Meter({ id, label, width = 6, showClip }: MeterProps) {
       {showClip && (
         <span ref={clip} className="meter-clip" title="Clipped in the last 2 seconds">
           clip
+        </span>
+      )}
+      {showClip && (
+        <span ref={limit} className="meter-clip meter-limit" data-on="false" title="Safety limiter: lights when it keeps the master under −0.3 dBFS">
+          lim
         </span>
       )}
       <span className="meter-well">

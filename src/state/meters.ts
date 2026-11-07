@@ -15,6 +15,9 @@ import { timelineClips, type Track } from "./types";
 
 export const meterLevels = new Map<string, number>();
 
+/** When the safety limiter last acted (performance.now()) and by how much (dB). */
+export const safetyActivity = { at: -1e9, db: 0 };
+
 /** How far through its loop each track's session clip is (0–1), from the engine. */
 export const clipProgress = new Map<string, number>();
 
@@ -30,6 +33,11 @@ export function ingestFrame(frame: MeterFrame, armed: Set<string>) {
   const input = Math.max(frame.input[0], frame.input[1]);
   for (const [id, [l, r]] of frame.tracks) smooth(id, Math.max(l, r, armed.has(id) ? input : 0));
   smooth("master", Math.max(frame.master[0], frame.master[1]));
+  if (frame.limiter && frame.limiter > 0.05) {
+    const now = performance.now();
+    safetyActivity.db = now - safetyActivity.at < 1500 ? Math.max(safetyActivity.db, frame.limiter) : frame.limiter;
+    safetyActivity.at = now;
+  }
   clipProgress.clear();
   for (const [id, state] of frame.clips) clipProgress.set(id, state.progress);
   ingestAnalysis(frame.analysis);
