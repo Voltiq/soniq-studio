@@ -5,6 +5,7 @@ import type { Device, DeviceParam } from "../state/types";
 import { Knob } from "./controls/Knob";
 import { Icon } from "./Icon";
 import { Learnable } from "./Learnable";
+import { Select } from "./Select";
 
 /** What holds a device chain, as its panels need it: an id for device ops and a colour. */
 export interface Owner {
@@ -49,14 +50,13 @@ export function ParamControl({
     <label className="dev-opt">
       <span className="knob-l">{p.label}</span>
       <span className="selwrap">
-        <select className="select sm" value={Math.round(p.value)} disabled={locked} onChange={(e) => setParam(track.id, device.id, p.id, Number(e.target.value))}>
+        <Select className="select sm" value={Math.round(p.value)} disabled={locked} onChange={(e) => setParam(track.id, device.id, p.id, Number(e.target.value))}>
           {p.options.map((o, i) => (
             <option key={o} value={i}>
               {o}
             </option>
           ))}
-        </select>
-        <Icon name="chevronDown" size={13} />
+        </Select>
       </span>
     </label>
   ) : (

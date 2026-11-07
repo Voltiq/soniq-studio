@@ -3,6 +3,7 @@ import { useStore } from "../state/store";
 import type { AudioClip, WarpMode } from "../state/types";
 import { Icon } from "./Icon";
 import { Popover } from "./Menu";
+import { Select } from "./Select";
 
 const MODES: [WarpMode, string, string][] = [
   ["beats", "Beats", "For drums and loops: every hit keeps its own speed, so the groove stays tight"],
@@ -42,7 +43,7 @@ export function WarpControls({ clip }: { clip: AudioClip }) {
       />
       <span className="warp-label">Warp</span>
       <span className="selwrap tip-t" data-tip={mode[2]}>
-        <select
+        <Select
           className="select sm"
           aria-label="Warp mode"
           value={mode[0]}
@@ -54,8 +55,7 @@ export function WarpControls({ clip }: { clip: AudioClip }) {
               {label}
             </option>
           ))}
-        </select>
-        <Icon name="chevronDown" size={13} />
+        </Select>
       </span>
       {warp && (
         <>
@@ -97,7 +97,7 @@ export function WarpControls({ clip }: { clip: AudioClip }) {
         onClick={(e) => setSliceMenu(sliceMenu ? null : e.currentTarget)}
       >
         <Icon name="split" size={13} />
-        Slice to MIDI
+        <span className="slice-label">Slice to MIDI</span>
         <Icon name="chevronDown" size={12} />
       </button>
       {sliceMenu && (

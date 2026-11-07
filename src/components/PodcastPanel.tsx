@@ -7,6 +7,7 @@ import { tempoOf } from "../state/tempo";
 import { timelineClips, type SpeakerLevel, type TrackRole } from "../state/types";
 import { Icon } from "./Icon";
 import { trackVar } from "./trackColor";
+import { Select } from "./Select";
 
 /** Where each speaker is levelled to, before the master. */
 const LEVELS: [number, string][] = [
@@ -116,13 +117,13 @@ export function PodcastPanel() {
           </p>
           <label className="an-target">
             To
-            <select value={target} onChange={(e) => setTarget(Number(e.target.value))} aria-label="Level the speakers to">
+            <Select value={target} onChange={(e) => setTarget(Number(e.target.value))} aria-label="Level the speakers to">
               {LEVELS.map(([v, label]) => (
                 <option key={v} value={v}>
                   {label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <button
             className="btn sm"
@@ -140,13 +141,13 @@ export function PodcastPanel() {
           <p className="muted an-note">Writes a volume lane on the music that dips wherever someone speaks. Move its points to adjust.</p>
           <label className="an-target">
             Under speech
-            <select value={depth} onChange={(e) => setDepth(Number(e.target.value))} aria-label="How far the music dips">
+            <Select value={depth} onChange={(e) => setDepth(Number(e.target.value))} aria-label="How far the music dips">
               {DEPTHS.map(([v, label]) => (
                 <option key={v} value={v}>
                   {label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <button
             className="btn sm"

@@ -8,6 +8,7 @@ import { clipProgress } from "../state/meters";
 import { positionBeats, useStore } from "../state/store";
 import { loopTempo, tempoOf } from "../state/tempo";
 import { clipLength, slotClip, type Clip, type Follow, type Track } from "../state/types";
+import { Select } from "../components/Select";
 
 const FOLLOWS: [Follow, string][] = [
   ["next", "Next clip"],
@@ -183,7 +184,7 @@ function ClipPanel() {
           on the timeline of {track.name} · {bars} {bars === 1 ? "bar" : "bars"}
         </span>
         <span className="selwrap">
-          <select className="select sm" aria-label="Put a copy in a scene" value="" onChange={(e) => putInSlot(clip.id, Number(e.target.value))}>
+          <Select className="select sm" aria-label="Put a copy in a scene" value="" onChange={(e) => putInSlot(clip.id, Number(e.target.value))}>
             <option value="" disabled>
               Put a copy in…
             </option>
@@ -194,8 +195,7 @@ function ClipPanel() {
               </option>
             ))}
             <option value={scenes.length}>A new scene</option>
-          </select>
-          <Icon name="chevronDown" size={13} />
+          </Select>
         </span>
         {free >= 0 && (
           <button className="btn xs" type="button" onClick={() => putInSlot(clip.id, free)}>
@@ -217,7 +217,7 @@ function ClipPanel() {
       <label className="cp-field">
         <span>Then</span>
         <span className="selwrap">
-          <select
+          <Select
             className="select sm"
             value={follow?.action ?? ""}
             onChange={(e) => setFollow(clip.id, e.target.value ? { action: e.target.value as Follow, bars: follow?.bars ?? Math.max(1, Math.ceil(bars)) } : null)}
@@ -228,8 +228,7 @@ function ClipPanel() {
                 {label}
               </option>
             ))}
-          </select>
-          <Icon name="chevronDown" size={13} />
+          </Select>
         </span>
       </label>
       {follow && (
@@ -283,14 +282,13 @@ export function SessionView() {
         <label className="cp-field">
           <span>Launch</span>
           <span className="selwrap tip-b" data-tip="Clips start on the next line of this grid, so they stay in time">
-            <select className="select sm" aria-label="Launch quantisation" value={quantize} onChange={(e) => setLaunchQuantize(Number(e.target.value))}>
+            <Select className="select sm" aria-label="Launch quantisation" value={quantize} onChange={(e) => setLaunchQuantize(Number(e.target.value))}>
               {choices.map(([v, label]) => (
                 <option key={v} value={v}>
                   {label}
                 </option>
               ))}
-            </select>
-            <Icon name="chevronDown" size={13} />
+            </Select>
           </span>
         </label>
         <button

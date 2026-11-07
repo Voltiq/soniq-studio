@@ -17,6 +17,7 @@ import { GRIDS, MIN_NOTE, commit, duplicate, legato, quantize, remove, transpose
 import { MAX_PPB, MIN_PPB, pianoView } from "../state/pianoView";
 import { pianoTarget, positionBeats, useStore, type PianoRows } from "../state/store";
 import { timelineClips, type MidiClip, type Note, type Track } from "../state/types";
+import { Select } from "../components/Select";
 
 const KEYS_W = 60;
 const RULER_H = 22;
@@ -114,14 +115,13 @@ function QuantizeMenu({ disabled }: { disabled: boolean }) {
             <label className="pr-q-row">
               <span>Grid</span>
               <span className="selwrap">
-                <select className="select sm" value={q.grid} onChange={(e) => setQuantizeSettings({ ...q, grid: Number(e.target.value) })}>
+                <Select className="select sm" value={q.grid} onChange={(e) => setQuantizeSettings({ ...q, grid: Number(e.target.value) })}>
                   {GRIDS.map(([label, beats]) => (
                     <option key={label} value={beats}>
                       {label}
                     </option>
                   ))}
-                </select>
-                <Icon name="chevronDown" size={13} />
+                </Select>
               </span>
             </label>
             <label className="pr-q-row">
@@ -285,12 +285,13 @@ function PianoRoll({ track, clip }: { track: Track; clip: MidiClip }) {
   // Start centred on the notes (or middle C).
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || size.h === 0 || centred.current) return;
+    // Not before the view has its real height: the first layout pass reports a sliver of it.
+    if (!el || el.clientHeight < RULER_H + ROW_H * 6 || centred.current) return;
     centred.current = true;
     const pitches = clip.notes.map((n) => n.pitch);
     const middle = pitches.length ? (Math.min(...pitches) + Math.max(...pitches)) / 2 : 60;
     const row = rowOf.get(Math.round(middle)) ?? rows.findIndex((p) => p <= middle);
-    el.scrollTop = Math.max(0, row * ROW_H - (size.h - RULER_H) / 2);
+    el.scrollTop = Math.max(0, row * ROW_H + ROW_H / 2 - (el.clientHeight - RULER_H) / 2);
   }, [size.h, clip.notes, rowOf, rows]);
 
   // The wheel scrolls; Ctrl + wheel zooms around the pointer.
@@ -849,7 +850,7 @@ function PianoRoll({ track, clip }: { track: Track; clip: MidiClip }) {
     <div className="piano" data-tool={tool}>
       <div className="ed-bar">
         <span className="selwrap">
-          <select
+          <Select
             className="select"
             aria-label="Clip to edit"
             value={clip.id}
@@ -864,8 +865,7 @@ function PianoRoll({ track, clip }: { track: Track; clip: MidiClip }) {
                 {c.slot != null ? ` (session, ${scenes[c.slot] ?? `scene ${c.slot + 1}`})` : ""}
               </option>
             ))}
-          </select>
-          <Icon name="chevronDown" size={14} />
+          </Select>
         </span>
         <div className="seg" role="group" aria-label="Editor">
           <button type="button" aria-pressed={mode === "notes"} onClick={() => st.setPianoMode("notes")}>
@@ -884,36 +884,33 @@ function PianoRoll({ track, clip }: { track: Track; clip: MidiClip }) {
           </span>
         )}
         <span className="selwrap tip-b" data-tip={mode === "steps" ? "Length of a step" : "Grid for drawing, moving and resizing  ·  hold Alt to place freely"}>
-          <select className="select sm" aria-label="Grid" value={grid} onChange={(e) => st.setPianoGrid(Number(e.target.value))}>
+          <Select className="select sm" aria-label="Grid" value={grid} onChange={(e) => st.setPianoGrid(Number(e.target.value))}>
             {GRIDS.map(([label, beats]) => (
               <option key={label} value={beats}>
                 {label}
               </option>
             ))}
             <option value={0}>Off</option>
-          </select>
-          <Icon name="chevronDown" size={13} />
+          </Select>
         </span>
         <span className="vsep" />
         <span className="selwrap">
-          <select className="select sm" aria-label="Key" value={key.root} onChange={(e) => st.setKey(formatKey({ ...key, root: Number(e.target.value) }))}>
+          <Select className="select sm" aria-label="Key" value={key.root} onChange={(e) => st.setKey(formatKey({ ...key, root: Number(e.target.value) }))}>
             {ROOTS.map((r, i) => (
               <option key={r} value={i}>
                 {r}
               </option>
             ))}
-          </select>
-          <Icon name="chevronDown" size={13} />
+          </Select>
         </span>
         <span className="selwrap">
-          <select className="select sm" aria-label="Scale" value={key.scale} onChange={(e) => st.setKey(formatKey({ ...key, scale: e.target.value }))}>
+          <Select className="select sm" aria-label="Scale" value={key.scale} onChange={(e) => st.setKey(formatKey({ ...key, scale: e.target.value }))}>
             {SCALE_NAMES.map((s) => (
               <option key={s} value={s}>
                 {s[0].toUpperCase() + s.slice(1)}
               </option>
             ))}
-          </select>
-          <Icon name="chevronDown" size={13} />
+          </Select>
         </span>
         {mode === "notes" && (
           <>

@@ -3,6 +3,7 @@ import { engine, inTauri, type AnalysisReading } from "../engine/bridge";
 import { HISTORY_SECONDS, bandHz, clearAnalysis, loudnessHistory, useAnalysis } from "../state/analysis";
 import { useStore } from "../state/store";
 import { Icon } from "./Icon";
+import { Select } from "./Select";
 
 /** Loudness targets people master to, in LUFS integrated. */
 const TARGETS: [string, number][] = [
@@ -289,13 +290,13 @@ export function AnalysisPanel() {
       {!inTauri && <p className="muted an-note">The meters measure the engine's output: open the desktop app (npm run tauri dev).</p>}
       <label className="an-target">
         <span>Target</span>
-        <select value={target} onChange={(e) => pickTarget(Number(e.target.value))} aria-label="Loudness target">
+        <Select value={target} onChange={(e) => pickTarget(Number(e.target.value))} aria-label="Loudness target">
           {TARGETS.map(([label, value]) => (
             <option key={value + label} value={value}>
               {label} LUFS
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       <div className="an-scroll">
         <Loudness reading={reading} target={target} />

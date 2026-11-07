@@ -7,6 +7,7 @@ import { CurveEditor } from "./CurveEditor";
 import { FixPanel } from "./FixDialog";
 import { Icon } from "./Icon";
 import { ParamForm } from "./ParamForm";
+import { Select } from "./Select";
 
 /** The last settings used for each effect, for this session. */
 const remembered = new Map<EffectType, Effect>();
@@ -94,15 +95,14 @@ function EffectPanel({ type, onClose }: { type: EffectType; onClose: () => void 
             <label className="setting wide">
               <span className="lab">Listen to</span>
               <span className="selwrap">
-                <select className="select" value={effect.track} onChange={(e) => change({ ...effect, track: e.target.value })}>
+                <Select className="select" value={effect.track} onChange={(e) => change({ ...effect, track: e.target.value })}>
                   {!effect.track && <option value="">Pick the track to duck under…</option>}
                   {others.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
                     </option>
                   ))}
-                </select>
-                <Icon name="chevronDown" size={14} />
+                </Select>
               </span>
             </label>
             <ParamForm specs={spec.params} target={effect} onChange={change} />

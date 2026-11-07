@@ -4,6 +4,7 @@ import { autoRange, isMidiFx, isModulator, targetLabel } from "../state/devices"
 import { formatDb, formatPan, formatParam } from "../state/format";
 import { useStore } from "../state/store";
 import { laneValue, sameAutoTarget, snapBeats, type AutoPoint, type AutoTarget, type Track } from "../state/types";
+import { Select } from "../components/Select";
 
 export const AUTO_H = 58;
 const PAD = 7;
@@ -166,7 +167,7 @@ export function AutomationRow({ track, target, laneWidth, last }: { track: Track
             {last && (
               <span className="ib xs auto-add" title="Show another lane">
                 <Icon name="plus" size={13} />
-                <select
+                <Select
                   aria-label={`Show another automation lane on ${track.name}`}
                   value=""
                   onChange={(e) => showAutomation(track.id, JSON.parse(e.target.value) as AutoTarget)}
@@ -183,7 +184,7 @@ export function AutomationRow({ track, target, laneWidth, last }: { track: Track
                       ))}
                     </optgroup>
                   ))}
-                </select>
+                </Select>
               </span>
             )}
           </div>

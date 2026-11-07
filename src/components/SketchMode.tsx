@@ -5,6 +5,7 @@ import { tempoOf } from "../state/tempo";
 import { timelineClips } from "../state/types";
 import { Icon } from "./Icon";
 import { trackVar } from "./trackColor";
+import { Select } from "./Select";
 
 const BARS = [1, 2, 4, 8];
 const INPUTS: [string, string][] = [
@@ -140,14 +141,13 @@ export function SketchMode() {
             <Icon name="metronome" size={16} />
           </button>
           <span className="selwrap sm">
-            <select className="select" aria-label="What to record" value={input} disabled={busy} onChange={(e) => setSketchInput(e.target.value)}>
+            <Select className="select" aria-label="What to record" value={input} disabled={busy} onChange={(e) => setSketchInput(e.target.value)}>
               {INPUTS.map(([v, label]) => (
                 <option key={v} value={v}>
                   {label}
                 </option>
               ))}
-            </select>
-            <Icon name="chevronDown" size={14} />
+            </Select>
           </span>
         </div>
         <button className="btn" type="button" onClick={() => void closeSketch()}>

@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { getParam, setParam, type ParamSpec } from "../state/effects";
 import type { Effect, Generator } from "../state/types";
-import { Icon } from "./Icon";
+import { Select } from "./Select";
 
 const STEPS = 1000;
 
@@ -71,7 +71,7 @@ export function ParamForm<T extends object>({ specs, target, onChange, compact }
             {spec.kind === "number" && <NumberParam spec={spec} value={Number(value)} onChange={update} />}
             {spec.kind === "select" && (
               <span className="selwrap">
-                <select
+                <Select
                   className="select"
                   aria-label={spec.label}
                   value={String(value)}
@@ -85,8 +85,7 @@ export function ParamForm<T extends object>({ specs, target, onChange, compact }
                       {label}
                     </option>
                   ))}
-                </select>
-                <Icon name="chevronDown" size={14} />
+                </Select>
               </span>
             )}
             {spec.kind === "toggle" && (

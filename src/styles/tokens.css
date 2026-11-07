@@ -37,6 +37,11 @@
   --d1: 120ms;
   --d2: 220ms;
   --d3: 360ms;
+  /* A spring that overshoots a touch and settles (the dropdown's entrance). */
+  --spring-snappy: linear(0, 0.0259, 0.0918, 0.1825, 0.2862, 0.3939, 0.4992, 0.5976, 0.6864, 0.7641, 0.8302, 0.8849, 0.929, 0.9634, 0.9893, 1.008, 1.0208, 1.0287, 1.0329, 1.0342, 1.0335, 1.0313, 1.0283, 1.0247, 1.021, 1.0174, 1.014, 1.011, 1.0083, 1.006, 1.0041, 1.0025, 1.0013, 1.0004, 0.9998, 0.9993, 0.999, 0.9989, 0.9988, 0.9988, 0.9989, 0.999, 0.9991, 1);
+  --d-snappy: 510ms;
+  --d-exit: 140ms;
+  --ease-exit: cubic-bezier(0.4, 0, 0.9, 0.4);
 
   /* Track colours are content, like artwork on a canvas — never chrome. */
   --track-1: #6b8dff;
@@ -119,5 +124,7 @@
     --d1: 0ms;
     --d2: 0ms;
     --d3: 0ms;
+    --d-snappy: 0ms;
+    --d-exit: 0ms;
   }
 }

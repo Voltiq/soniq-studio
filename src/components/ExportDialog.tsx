@@ -4,6 +4,7 @@ import { useStore, type ExportMode } from "../state/store";
 import { tempoOf } from "../state/tempo";
 import { clipLength, timelineClips, type ChaptersFile, type Encoding, type ExportFormat, type Metadata } from "../state/types";
 import { Icon } from "./Icon";
+import { Select } from "./Select";
 
 const TARGETS: [string, string][] = [
   ["", "Off · keep the mix level"],
@@ -74,14 +75,13 @@ export function EncodingFields({ encoding, onChange }: { encoding: Encoding; onC
         <label className="setting">
           <span className="lab">Bitrate</span>
           <span className="selwrap">
-            <select className="select" value={encoding.bitrate} onChange={(e) => set({ bitrate: Number(e.target.value) })}>
+            <Select className="select" value={encoding.bitrate} onChange={(e) => set({ bitrate: Number(e.target.value) })}>
               {(format === "mp3" ? [128, 160, 192, 256, 320] : [64, 96, 128, 160, 192, 256]).map((k) => (
                 <option key={k} value={k}>
                   {k} kbps{format === "mp3" && k === 320 ? " · best" : format === "opus" && k === 128 ? " · transparent for most music" : ""}
                 </option>
               ))}
-            </select>
-            <Icon name="chevronDown" size={14} />
+            </Select>
           </span>
         </label>
       )}
@@ -89,14 +89,13 @@ export function EncodingFields({ encoding, onChange }: { encoding: Encoding; onC
         <label className="setting">
           <span className="lab">Quality</span>
           <span className="selwrap">
-            <select className="select" value={encoding.quality} onChange={(e) => set({ quality: Number(e.target.value) })}>
+            <Select className="select" value={encoding.quality} onChange={(e) => set({ quality: Number(e.target.value) })}>
               {[2, 4, 5, 6, 8, 10].map((q) => (
                 <option key={q} value={q}>
                   {q} · about {[0, 0, 96, 0, 128, 160, 192, 0, 256, 0, 500][q]} kbps
                 </option>
               ))}
-            </select>
-            <Icon name="chevronDown" size={14} />
+            </Select>
           </span>
         </label>
       )}
@@ -205,7 +204,7 @@ function Export({ onClose }: { onClose: () => void }) {
             <label className="setting">
               <span className="lab">Sample rate</span>
               <span className="selwrap">
-                <select className="select" value={rate} onChange={(e) => setRate(e.target.value)}>
+                <Select className="select" value={rate} onChange={(e) => setRate(e.target.value)}>
                   <option value="">Engine rate ({engineRate / 1000} kHz)</option>
                   {[44_100, 48_000, 88_200, 96_000]
                     .filter((r) => r !== engineRate && (format !== "mp3" || r <= 48_000))
@@ -214,8 +213,7 @@ function Export({ onClose }: { onClose: () => void }) {
                         {r / 1000} kHz
                       </option>
                     ))}
-                </select>
-                <Icon name="chevronDown" size={14} />
+                </Select>
               </span>
             </label>
           )}
@@ -239,14 +237,13 @@ function Export({ onClose }: { onClose: () => void }) {
           <label className="setting wide">
             <span className="lab">Loudness</span>
             <span className="selwrap">
-              <select className="select" value={loudness} onChange={(e) => setLoudness(e.target.value)}>
+              <Select className="select" value={loudness} onChange={(e) => setLoudness(e.target.value)}>
                 {TARGETS.map(([v, label]) => (
                   <option key={v} value={v}>
                     {label}
                   </option>
                 ))}
-              </select>
-              <Icon name="chevronDown" size={14} />
+              </Select>
             </span>
           </label>
           {loudness && (
@@ -264,13 +261,12 @@ function Export({ onClose }: { onClose: () => void }) {
               </span>
               {chapters && (
                 <span className="selwrap sm">
-                  <select className="select" aria-label="Chapters file" value={chaptersFile} onChange={(e) => setChaptersFile(e.target.value as ChaptersFile | "")}>
+                  <Select className="select" aria-label="Chapters file" value={chaptersFile} onChange={(e) => setChaptersFile(e.target.value as ChaptersFile | "")}>
                     <option value="">No chapters file</option>
                     <option value="json">+ chapters.json · podcast hosts</option>
                     <option value="txt">+ chapters.txt · show notes</option>
                     <option value="cue">+ .cue sheet</option>
-                  </select>
-                  <Icon name="chevronDown" size={14} />
+                  </Select>
                 </span>
               )}
             </div>

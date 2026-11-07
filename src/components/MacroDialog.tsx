@@ -9,6 +9,7 @@ import type { BatchProgress, BatchReport, Effect, EffectType, Encoding, Macro } 
 import { EncodingFields, defaultEncoding } from "./ExportDialog";
 import { Icon } from "./Icon";
 import { ParamForm } from "./ParamForm";
+import { Select } from "./Select";
 
 const newId = () => `macro-${Date.now().toString(36)}`;
 const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
@@ -57,7 +58,7 @@ function Steps({ macro, onChange }: { macro: Macro; onChange: (steps: Effect[]) 
       {!readOnly && (
         <li className="step-add">
           <span className="selwrap">
-            <select className="select sm" aria-label="Add a step" value="" onChange={(e) => e.target.value && onChange([...macro.steps, defaultEffect(e.target.value as EffectType)])}>
+            <Select className="select sm" aria-label="Add a step" value="" onChange={(e) => e.target.value && onChange([...macro.steps, defaultEffect(e.target.value as EffectType)])}>
               <option value="">Add a step…</option>
               {/* Auto Duck listens to a track and the curve is drawn: neither fits a macro step. */}
               {EFFECTS.filter((e) => e.type !== "autoDuck" && e.type !== "curveEq").map((e) => (
@@ -65,8 +66,7 @@ function Steps({ macro, onChange }: { macro: Macro; onChange: (steps: Effect[]) 
                   {e.name}
                 </option>
               ))}
-            </select>
-            <Icon name="chevronDown" size={13} />
+            </Select>
           </span>
         </li>
       )}

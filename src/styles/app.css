@@ -1057,7 +1057,6 @@ code {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  scrollbar-width: thin;
 }
 
 .bitem {
@@ -1235,7 +1234,6 @@ code {
 .arr-scroll {
   flex: 1;
   overflow: auto;
-  scrollbar-width: thin;
 }
 
 .arr-inner {
@@ -1735,7 +1733,6 @@ code {
   align-items: stretch;
   gap: 4px;
   overflow-x: auto;
-  scrollbar-width: thin;
   padding-bottom: 2px;
 }
 
@@ -2762,8 +2759,45 @@ code {
 
 .dialog > .dialog-foot {
   bottom: -18px;
-  margin-bottom: -18px;
-  padding-bottom: 18px;
+  margin: 0 -18px -18px;
+  padding: 12px 18px 18px;
+}
+
+/* While a dialog scrolls, a hairline marks where its content passes under the
+   head (once scrolled) and the foot (until the end). A dialog that fits has
+   no scroll timeline, so neither shows. */
+.dialog > .dialog-head {
+  margin-left: -18px;
+  margin-right: -18px;
+  padding: 18px 18px 10px;
+  margin-bottom: -10px;
+  animation: head-edge linear both;
+  animation-timeline: scroll(nearest block);
+  animation-range: 0 24px;
+}
+
+.dialog > .dialog-foot {
+  animation: foot-edge linear both;
+  animation-timeline: scroll(nearest block);
+}
+
+@keyframes head-edge {
+  from {
+    box-shadow: 0 1px 0 transparent;
+  }
+  to {
+    box-shadow: 0 1px 0 var(--line);
+  }
+}
+
+@keyframes foot-edge {
+  0%,
+  97% {
+    box-shadow: 0 -1px 0 var(--line);
+  }
+  100% {
+    box-shadow: 0 -1px 0 transparent;
+  }
 }
 
 .kv {
@@ -3706,7 +3740,6 @@ code {
   position: absolute;
   inset: 0;
   overflow: auto;
-  scrollbar-width: thin;
 }
 
 .pr-canvas {
@@ -3859,7 +3892,6 @@ code {
   flex: 1 1 0;
   min-height: 0;
   overflow: auto;
-  scrollbar-width: thin;
 }
 
 .steps-grid {
@@ -4229,7 +4261,6 @@ code {
   flex-direction: column;
   gap: 3px;
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .rack-chain {
@@ -4448,7 +4479,7 @@ code {
 
 .pads {
   display: grid;
-  grid-template-columns: repeat(4, 58px);
+  grid-template-columns: repeat(4, 66px);
   grid-auto-rows: 26px;
   gap: 3px;
 }
@@ -4972,6 +5003,10 @@ code {
 
 .bpm.follows input {
   color: var(--warning);
+}
+
+.arrange {
+  container: arrange / inline-size;
 }
 
 .clip-hud {
@@ -7395,4 +7430,262 @@ body.dragging-item * {
 
 .i.flip {
   transform: scaleX(-1);
+}
+
+/* ---------- Dropdowns (components/Select.tsx) ---------- */
+
+/* The trigger keeps the field look of .select (and every rule that sizes one
+   in context); its chevron is its own and turns over while the list is open. */
+button.select.sbox {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  padding-right: 28px;
+  text-align: left;
+  white-space: nowrap;
+  transition:
+    border-color var(--d2) var(--ease),
+    box-shadow var(--d2) var(--ease),
+    background var(--d1) var(--ease);
+}
+
+button.select.sbox:hover:not(:disabled) {
+  border-color: var(--line-2);
+}
+
+button.select.sbox[aria-expanded="true"] {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+button.select.sbox:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Every label in one grid cell: as wide as the longest, like a native select. */
+.sbox-value {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sbox-value > span {
+  grid-area: 1 / 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  visibility: hidden;
+}
+
+.sbox-value > span.on {
+  visibility: visible;
+}
+
+button.select.sbox .i.sbox-chev {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  margin-top: -6.5px;
+  color: var(--text-3);
+  pointer-events: none;
+  transition:
+    transform var(--d-snappy) var(--spring-snappy),
+    color var(--d1) var(--ease);
+}
+
+button.select.sbox:hover .i.sbox-chev,
+button.select.sbox[aria-expanded="true"] .i.sbox-chev {
+  color: var(--text-1);
+}
+
+button.select.sbox[aria-expanded="true"] .i.sbox-chev {
+  transform: rotate(180deg);
+}
+
+/* The open list: the menu surface, growing out of its trigger on the snappy
+   spring with its corners drawing in from rounder; out is quick and plain.
+   Above dialogs and their scrims: a dropdown can open from any of them. */
+.menu.sel-menu {
+  z-index: 300;
+  min-width: 120px;
+  max-height: min(340px, 60vh);
+  gap: 1px;
+  padding: 5px;
+  transform-origin: var(--origin, top center);
+  animation:
+    sel-in var(--d-snappy) var(--spring-snappy) both,
+    sel-reveal 150ms var(--ease) both;
+}
+
+.menu.sel-menu[data-state="closed"] {
+  pointer-events: none;
+  animation: sel-out var(--d-exit) var(--ease-exit) both;
+}
+
+.sel-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  min-height: 30px;
+  padding: 0 9px 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-1);
+  font: 500 12.5px var(--font);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--d1) var(--ease);
+  animation: sel-row var(--d-snappy) var(--spring-snappy) both;
+}
+
+.sel-opt:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.sel-opt:active:not(:disabled) {
+  background: color-mix(in oklab, var(--accent) 26%, transparent);
+}
+
+/* The list's own cursor: keyboard focus is the row's tint, not a ring. */
+.sel-opt:focus-visible {
+  outline: none;
+  background: var(--accent-soft);
+}
+
+.sel-opt[aria-selected="true"] {
+  font-weight: 600;
+}
+
+.sel-opt:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.sel-opt .i.sel-tick {
+  flex: none;
+  color: var(--accent-text);
+  animation: sel-check 320ms var(--spring) both;
+}
+
+.menu.sel-menu[data-state="closed"] .sel-opt,
+.menu.sel-menu[data-state="closed"] .sel-tick {
+  animation: none;
+}
+
+.sel-group {
+  padding: 8px 10px 3px;
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.sel-group:first-child {
+  padding-top: 4px;
+}
+
+@keyframes sel-in {
+  from {
+    transform: translateY(-6px) scale(0.94);
+    border-radius: 22px;
+  }
+}
+
+@keyframes sel-reveal {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+  }
+  to {
+    filter: none;
+  }
+}
+
+@keyframes sel-out {
+  to {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.97);
+    filter: blur(3px);
+  }
+}
+
+@keyframes sel-row {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes sel-check {
+  from {
+    opacity: 0;
+    transform: scale(0.4) rotate(-12deg);
+  }
+}
+
+/* ---------- Scrollbars ---------- */
+
+/* Thin, rounded and themed everywhere, with no arrow buttons: the thumb
+   floats in a clear track and darkens under the pointer. Inside rounded
+   surfaces the track keeps clear of the corners. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--text-3) 42%, transparent) padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklab, var(--text-2) 70%, transparent);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--accent);
+}
+
+.dialog::-webkit-scrollbar-track,
+.menu::-webkit-scrollbar-track,
+.card::-webkit-scrollbar-track {
+  margin: 14px 0;
+}
+
+/* A dropdown trigger keeps its width in a crowded row unless its context sizes it (no specificity, so any context rule wins). */
+:where(button.select.sbox, .selwrap) {
+  flex-shrink: 0;
+}
+
+/* A narrow arrangement (a side panel open): the clip toolbar keeps its
+   controls and drops their words, so it never runs under the zoom control. */
+@container arrange (max-width: 900px) {
+  .clip-hud .slice-label,
+  .clip-hud .warp-label {
+    display: none;
+  }
+}
+
+@container arrange (max-width: 760px) {
+  .clip-hud .clip-hud-name {
+    display: none;
+  }
 }

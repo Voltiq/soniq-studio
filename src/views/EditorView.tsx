@@ -13,6 +13,7 @@ import { editorTarget, positionBeats, useStore, type SpectralMode } from "../sta
 import { beatAfter, clipSeconds, tempoOf } from "../state/tempo";
 import type { AudioClip, FrequencyScale, SimpleEditOp } from "../state/types";
 import { DetailWave, SpectrogramCanvas, formatHz, frequencyTicks, hzAt, posOf, useLatest } from "./editorCanvas";
+import { Select } from "../components/Select";
 
 const QUICK: SimpleEditOp[] = ["normalize", "amplify", "fadeIn", "fadeOut", "reverse", "silence"];
 const SCALES: [FrequencyScale, string][] = [
@@ -376,7 +377,7 @@ export function EditorView() {
     <div className="editor" data-tool={tool}>
       <div className="ed-bar">
         <span className="selwrap">
-          <select
+          <Select
             className="select"
             aria-label="Clip to edit"
             value={clip.id}
@@ -390,8 +391,7 @@ export function EditorView() {
                 {t.name} — {c.name}
               </option>
             ))}
-          </select>
-          <Icon name="chevronDown" size={14} />
+          </Select>
         </span>
         <div className="seg" role="group" aria-label="Display">
           <button type="button" aria-pressed={display === "waveform"} onClick={() => st.setEditorDisplay("waveform")}>
@@ -403,14 +403,13 @@ export function EditorView() {
         </div>
         {display === "spectrogram" && (
           <span className="selwrap">
-            <select className="select sm" aria-label="Frequency scale" value={scale} onChange={(e) => st.setSpectrumScale(e.target.value as FrequencyScale)}>
+            <Select className="select sm" aria-label="Frequency scale" value={scale} onChange={(e) => st.setSpectrumScale(e.target.value as FrequencyScale)}>
               {SCALES.map(([v, l]) => (
                 <option key={v} value={v}>
                   {l}
                 </option>
               ))}
-            </select>
-            <Icon name="chevronDown" size={13} />
+            </Select>
           </span>
         )}
         <span className="vsep" />

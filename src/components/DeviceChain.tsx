@@ -16,6 +16,7 @@ import { Popover } from "./Menu";
 import { PluginBody } from "./PluginPanel";
 import { SavePreset } from "./LibraryPanel";
 import { trackColor, trackVar } from "./trackColor";
+import { Select } from "./Select";
 
 /** Where the sampler's slices start (fractions of the sample), as the engine cuts them: equal pieces of start–end, or the transients inside it. */
 function slicePoints(start: number, end: number, count: number, onsets: number[] | null): number[] {
@@ -475,7 +476,7 @@ function SidechainPicker({ track, device }: { track: Owner; device: Device }) {
     >
       <span className="knob-l">{vocoder ? "Carrier track" : "Sidechain"}</span>
       <span className="selwrap">
-        <select
+        <Select
           className="select sm"
           value={device.sidechain ?? ""}
           disabled={!device.on}
@@ -489,8 +490,7 @@ function SidechainPicker({ track, device }: { track: Owner; device: Device }) {
                 {t.name}
               </option>
             ))}
-        </select>
-        <Icon name="chevronDown" size={13} />
+        </Select>
       </span>
     </label>
   );
@@ -513,7 +513,7 @@ function InputPicker({ track }: { track: Track }) {
     <div className="input-pick">
       <Icon name="mic" size={14} className="dim" />
       <span className="selwrap">
-        <select
+        <Select
           className="select sm"
           aria-label={`${track.name} records from`}
           value={track.input}
@@ -524,12 +524,11 @@ function InputPicker({ track }: { track: Track }) {
               {o.includes("/") ? `In ${o} · stereo` : `In ${o} · mono`}
             </option>
           ))}
-        </select>
-        <Icon name="chevronDown" size={13} />
+        </Select>
       </span>
       <Icon name="headphones" size={14} className="dim" />
       <span className="selwrap tip-t" data-tip="Hear the input through this track. Use headphones: speakers near a microphone howl.">
-        <select
+        <Select
           className="select sm"
           aria-label={`${track.name} monitoring`}
           value={track.monitor}
@@ -540,8 +539,7 @@ function InputPicker({ track }: { track: Track }) {
               {MONITOR_LABELS[m]}
             </option>
           ))}
-        </select>
-        <Icon name="chevronDown" size={13} />
+        </Select>
       </span>
       {mismatch && (
         <span className="warn-note" title={`The input runs at ${inputRate / 1000} kHz and the output at ${outputRate / 1000} kHz.`}>
@@ -570,7 +568,7 @@ function ModTargetPicker({ track, device }: { track: Owner; device: Device }) {
       <label className="dev-opt mod-pick tip-t" data-tip="The knob this modulator moves, around where you set it">
         <span className="knob-l">Moves</span>
         <span className="selwrap">
-          <select
+          <Select
             className="select sm"
             value={value}
             disabled={!device.on}
@@ -591,8 +589,7 @@ function ModTargetPicker({ track, device }: { track: Owner; device: Device }) {
                   ))}
               </optgroup>
             ))}
-          </select>
-          <Icon name="chevronDown" size={13} />
+          </Select>
         </span>
       </label>
       <span className="muted mod-note">{moved ? `${moved.name}${moved.on ? "" : " (off)"}` : targets.length ? "Pick a knob to move" : "Add an instrument or effect first"}</span>

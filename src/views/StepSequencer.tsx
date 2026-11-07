@@ -13,6 +13,7 @@ import { noteName, parseKey, scaleClasses } from "../state/music";
 import { quantize } from "../state/notes";
 import { positionBeats, useStore } from "../state/store";
 import { sortNotes, type MidiClip, type Note, type Track } from "../state/types";
+import { Select } from "../components/Select";
 
 const HEAD_W = 156;
 const LANE_H = 64;
@@ -179,7 +180,7 @@ export function StepSequencer({ track, clip }: { track: Track; clip: MidiClip })
         <label className="steps-opt">
           <span className="lab">Steps</span>
           <span className="selwrap">
-            <select
+            <Select
               className="select sm"
               value={steps}
               onChange={(e) => st.trimClip(clip.id, clip.start, Number(e.target.value) * grid)}
@@ -190,13 +191,13 @@ export function StepSequencer({ track, clip }: { track: Track; clip: MidiClip })
                   {n}
                 </option>
               ))}
-            </select>
+            </Select>
           </span>
         </label>
         <label className="steps-opt tip-b" data-tip="Delays every second step, for a shuffled groove">
           <span className="lab">Swing</span>
           <span className="selwrap">
-            <select
+            <Select
               className="select sm"
               defaultValue={0}
               aria-label="Swing"
@@ -210,7 +211,7 @@ export function StepSequencer({ track, clip }: { track: Track; clip: MidiClip })
                   {v}%
                 </option>
               ))}
-            </select>
+            </Select>
           </span>
         </label>
         <span className="vsep" />
@@ -218,14 +219,14 @@ export function StepSequencer({ track, clip }: { track: Track; clip: MidiClip })
         <label className="steps-opt">
           <span className="lab">Fill</span>
           <span className="selwrap">
-            <select className="select sm" value="" aria-label={`Fill ${label(row)}`} onChange={(e) => e.target.value && fill(Number(e.target.value))}>
+            <Select className="select sm" value="" aria-label={`Fill ${label(row)}`} onChange={(e) => e.target.value && fill(Number(e.target.value))}>
               <option value="">Choose…</option>
               {FILLS.map(([v, l]) => (
                 <option key={v} value={v}>
                   {l}
                 </option>
               ))}
-            </select>
+            </Select>
           </span>
         </label>
         <button

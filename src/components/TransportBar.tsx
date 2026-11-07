@@ -6,6 +6,7 @@ import { positionBeats, useStore } from "../state/store";
 import { tempoOf } from "../state/tempo";
 import type { Snap } from "../state/types";
 import { Icon } from "./Icon";
+import { Select } from "./Select";
 
 /** Major and minor in every key; the piano roll offers the modes and other scales. */
 const KEYS = ["major", "minor"].flatMap((scale) => ROOTS.map((root) => `${root} ${scale}`));
@@ -211,22 +212,20 @@ export function TransportBar() {
       <BpmField />
 
       <span className="selwrap">
-        <select className="select" aria-label="Time signature" value={bpb} onChange={(e) => st.setBeatsPerBar(Number(e.target.value))}>
+        <Select className="select" aria-label="Time signature" value={bpb} onChange={(e) => st.setBeatsPerBar(Number(e.target.value))}>
           {[2, 3, 4, 5, 6, 7].map((n) => (
             <option key={n} value={n}>
               {n} / 4
             </option>
           ))}
-        </select>
-        <Icon name="chevronDown" size={14} />
+        </Select>
       </span>
       <span className="selwrap">
-        <select className="select" aria-label="Key and scale" value={key} onChange={(e) => st.setKey(e.target.value)}>
+        <Select className="select" aria-label="Key and scale" value={key} onChange={(e) => st.setKey(e.target.value)}>
           {(KEYS.includes(key) ? KEYS : [key, ...KEYS]).map((k) => (
             <option key={k}>{k}</option>
           ))}
-        </select>
-        <Icon name="chevronDown" size={14} />
+        </Select>
       </span>
       <button
         className={metronome ? "ib toggled tip-b" : "ib tip-b"}

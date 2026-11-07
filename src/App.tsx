@@ -189,7 +189,8 @@ function useShortcuts() {
       if (s.paletteOpen || s.settingsOpen || s.exportOpen || s.effectDialog || s.generatorOpen || s.macroDialog || s.noteTool || s.welcomeOpen || s.missingOpen || s.sketchOpen || s.aboutOpen || s.analyzeDialog) return;
       const target = e.target as HTMLElement | null;
       const isRange = target instanceof HTMLInputElement && target.type === "range";
-      const typing = !isRange && !!target?.closest("input, textarea, select, [contenteditable='true']");
+      // A dropdown's trigger and list take their keys as a native select does.
+      const typing = !isRange && !!target?.closest("input, textarea, select, button.sbox, .sel-menu, [contenteditable='true']");
       const mod = e.ctrlKey || e.metaKey;
       // File and palette shortcuts work everywhere; the rest leave text fields alone.
       if (typing && !(mod && "kosni".includes(e.key.toLowerCase()))) return;

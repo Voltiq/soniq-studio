@@ -7,6 +7,7 @@ import type { MappingTarget, MidiPortStatus, Project } from "../state/types";
 import { KEYMAP_PRESETS, eventShortcut, keyFor, presetKey, type Keymap } from "../state/keymap";
 import { CrashSettings, UpdateSettings } from "./AboutDialog";
 import { Icon } from "./Icon";
+import { Select as Dropdown } from "./Select";
 
 /** Logical cores on this computer. */
 const CORES = Math.max(1, navigator.hardwareConcurrency || 1);
@@ -17,10 +18,9 @@ function Select({ label, value, onChange, children }: { label: string; value: st
     <label className="setting">
       <span className="lab">{label}</span>
       <span className="selwrap">
-        <select className="select" value={value} onChange={(e) => onChange(e.target.value)}>
+        <Dropdown className="select" value={value} onChange={(e) => onChange(e.target.value)}>
           {children}
-        </select>
-        <Icon name="chevronDown" size={14} />
+        </Dropdown>
       </span>
     </label>
   );

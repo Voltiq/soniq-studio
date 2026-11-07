@@ -5,6 +5,7 @@ import { noteName } from "../state/music";
 import { editorTarget, useStore } from "../state/store";
 import type { SpectrumPlot } from "../state/types";
 import { Icon } from "./Icon";
+import { Select } from "./Select";
 
 const W = 600;
 const H = 240;
@@ -117,14 +118,13 @@ function SpectrumPanel() {
           <span className="muted">Measuring…</span>
         )}
         <span className="selwrap sm">
-          <select className="select" aria-label="Window size" value={size} onChange={(e) => setSize(Number(e.target.value))}>
+          <Select className="select" aria-label="Window size" value={size} onChange={(e) => setSize(Number(e.target.value))}>
             {SIZES.map((n) => (
               <option key={n} value={n}>
                 {n} points · {((plot?.sampleRate ?? 48_000) / n).toFixed(1)} Hz apart
               </option>
             ))}
-          </select>
-          <Icon name="chevronDown" size={13} />
+          </Select>
         </span>
       </div>
     </>

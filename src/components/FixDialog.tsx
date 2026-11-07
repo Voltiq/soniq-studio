@@ -4,6 +4,7 @@ import { formatClock } from "../state/format";
 import { editorTarget, useStore } from "../state/store";
 import type { Diagnosis, Effect, FixAnalysis, FixKind, FixStep } from "../state/types";
 import { Icon } from "./Icon";
+import { Select } from "./Select";
 
 /** Where the loudness ends up, in LUFS. */
 const TARGETS: [number, string][] = [
@@ -203,14 +204,13 @@ export function FixPanel({ onClose }: { onClose: () => void }) {
         <label className="setting wide fix-target">
           <span className="lab">Loudness</span>
           <span className="selwrap">
-            <select className="select" value={lufs} onChange={(e) => pickTarget(Number(e.target.value))}>
+            <Select className="select" value={lufs} onChange={(e) => pickTarget(Number(e.target.value))}>
               {TARGETS.map(([v, label]) => (
                 <option key={v} value={v}>
                   {label}
                 </option>
               ))}
-            </select>
-            <Icon name="chevronDown" size={14} />
+            </Select>
           </span>
         </label>
 
