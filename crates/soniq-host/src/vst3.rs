@@ -716,7 +716,7 @@ impl Plugin {
                 && ok(unsafe { component.getState(s.as_ptr()) })
             {
                 unsafe {
-                    s.seek(0, IBStream_::IStreamSeekMode_::kIBSeekSet, ptr::null_mut());
+                    s.seek(0, IBStream_::IStreamSeekMode_::kIBSeekSet as _, ptr::null_mut());
                     c.setComponentState(s.as_ptr());
                 }
             }
@@ -818,8 +818,8 @@ impl Plugin {
     pub fn activate(&mut self, rate: f64) -> Result<Processor, String> {
         self.deactivate();
         let mut setup = ProcessSetup {
-            processMode: ProcessModes_::kRealtime,
-            symbolicSampleSize: SymbolicSampleSizes_::kSample32,
+            processMode: ProcessModes_::kRealtime as _,
+            symbolicSampleSize: SymbolicSampleSizes_::kSample32 as _,
             maxSamplesPerBlock: MAX_FRAMES as i32,
             sampleRate: rate,
         };
@@ -1251,8 +1251,8 @@ impl Processor {
         context.timeSigDenominator = 4;
 
         let mut data = ProcessData {
-            processMode: ProcessModes_::kRealtime,
-            symbolicSampleSize: SymbolicSampleSizes_::kSample32,
+            processMode: ProcessModes_::kRealtime as _,
+            symbolicSampleSize: SymbolicSampleSizes_::kSample32 as _,
             numSamples: n as i32,
             numInputs: bus_count[0] as i32,
             numOutputs: bus_count[1] as i32,
