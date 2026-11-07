@@ -685,6 +685,32 @@ const EMPTY_PROJECT: Project = {
 
 const PROJECT_FILTER = [{ name: "Soniq project", extensions: ["soniq"] }];
 
+/**
+ * Changes the theme as one picture: every colour switches at once (their own
+ * transitions are held off, or each would run at its own speed), React and the
+ * canvases get a moment to redraw, and the old window crossfades into the new
+ * evenly. (No animation frames are awaited: they are paused while the browser
+ * prepares the crossfade.)
+ */
+function crossfade(change: () => void) {
+  const root = document.documentElement;
+  const settle = () => new Promise<void>((done) => window.setTimeout(done, 30));
+  root.classList.add("theme-switching");
+  const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (!("startViewTransition" in document) || reduced) {
+    change();
+    void settle().then(() => root.classList.remove("theme-switching"));
+    return;
+  }
+  const transition = document.startViewTransition(async () => {
+    change();
+    await settle();
+  });
+  // Skipped (a second switch straight after): the newer one carries on.
+  transition.ready.catch(() => {});
+  void transition.finished.finally(() => root.classList.remove("theme-switching"));
+}
+
 const AUDITION_SYNC_KEY = "soniq.auditionSync";
 let libraryPoll = 0;
 let auditionTimer = 0;
@@ -1121,7 +1147,10 @@ export const useStore = create<Store>((set, get) => {
     },
     setTheme: (theme) => {
       writePref("theme", theme);
-      set({ theme });
+      crossfade(() => {
+        document.documentElement.dataset.theme = theme;
+        set({ theme });
+      });
     },
     setTool: (tool) => set({ tool }),
     toggleBrowser: () => set((s) => ({ browserOpen: !s.browserOpen })),

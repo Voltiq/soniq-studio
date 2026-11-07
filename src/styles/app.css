@@ -7798,3 +7798,20 @@ button.select.sbox[aria-expanded="true"] .i.sbox-chev {
 .topbar .top-right > :not(.proj) {
   flex: none;
 }
+
+/* ---------- Theme switch ---------- */
+
+/* Every colour changes at once: no element runs its own transition while the
+   theme switches; the window crossfades as one picture instead. */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: none !important;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 260ms;
+  animation-timing-function: var(--ease);
+}
