@@ -1119,7 +1119,16 @@ export const useStore = create<Store>((set, get) => {
         });
       } catch (err) {
         set({ updateStatus: "idle" });
-        if (manual) fail("Could not check for updates")(err);
+        if (!manual) return;
+        // The updater's own words are about JSON and remotes: say what it means.
+        const text = message(err);
+        pushToast({
+          tone: "warning",
+          title: "Could not check for updates",
+          detail: /release json|remote|network|dns|connect|timed out/i.test(text)
+            ? "GitHub could not be reached, or it has no release to offer yet. Check your connection and try again later."
+            : text,
+        });
       }
     },
 

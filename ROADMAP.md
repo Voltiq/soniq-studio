@@ -511,8 +511,14 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 - Stem separation waits on the AI decision (§9.5); touch and pen, and localisation, come after
 
 **Part C — release**
-- [ ] Installers for Windows (MSI or NSIS), macOS (DMG, notarised) and Linux (AppImage, deb)
-- [ ] Code signing, auto-update (Tauri updater), crash reporting (opt-in)
+- [x] Windows installer: an NSIS setup (`Soniq Studio_<version>_x64-setup.exe`, about 5 MB), per-user (no admin prompt), with Start menu entry and uninstaller; app icons from Soniq's own mark (`src-tauri/icons/source.svg`)
+- [x] Releases on GitHub ([Voltiq/soniq-studio](https://github.com/Voltiq/soniq-studio)): CI builds, lints (warnings fail) and tests every push; pushing a `v*` tag builds Windows, macOS (`.app`, `.dmg`) and Linux (AppImage, `.deb`) into one release with signed update files and `latest.json`, published once Windows has built. `scripts/set-version.mjs` sets the version everywhere; RELEASING.md walks through it
+- [x] Auto-update (Tauri updater): Help › Check for updates…, or once a day by itself (Settings, Help › About; on by default, it only asks GitHub); a found version offers "Install and restart", asks about unsaved changes first, downloads with progress and restarts. Updates must carry the project's signature (the public key is built in)
+- [x] Crash reports, opt-in and on this computer only: asked once at first launch; a panic anywhere (and an interface error nobody caught, a few per run) is written to a text file with what happened, where, the version and the system, nothing from songs or audio. The next launch says so and shows it; Help › Crash reports lists, shows, copies and deletes them, with a link to file an issue. If drawing the interface fails, a "Something went wrong" page offers a reload (the song lives in Rust and survives)
+- [x] Help menu: start page and lessons, check for updates, crash reports, report a problem on GitHub, About Soniq Studio (the version)
+- [x] Rust tests (225 in total) now also cover crash reports (written only while switched on, with thread, place and version; nothing outside their folder can be read or deleted) and their dates
+- [ ] Code signing: not set up (no certificate yet), so SmartScreen warns on the unsigned setup; RELEASING.md says how to add a certificate or Azure Trusted Signing, and Apple's Developer ID for macOS (also needed to notarise)
+- [ ] Not tried yet: installing the setup (built and signed for updates here, not installed on this machine), an update from one release to the next, and the macOS and Linux builds (best effort on CI until tested). Checked in the desktop app: the Help menu; the one-time "Keep crash reports?" question; an interface error kept as a report, listed and shown in Help › Crash reports; About shows the version; the daily check stays quiet when it cannot reach a release, and a manual check says so plainly
 
 ---
 
@@ -575,6 +581,9 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 soniq-studio/
 ├─ ROADMAP.md                   ← this file
 ├─ README.md                    how to run
+├─ RELEASING.md                 versions, tags, the update key, code signing
+├─ .github/workflows/           CI (build, clippy, tests) and Release (installers, updates)
+├─ scripts/set-version.mjs      the version in package.json, Cargo.toml and tauri.conf.json
 ├─ shared/device-catalog.json   device specs read by Rust and the UI
 ├─ crates/
 │  ├─ soniq-project/            project model, ops (markers, notes, device samples, automation,
@@ -613,6 +622,7 @@ soniq-studio/
 │  ├─ files.rs, settings.rs     saving, autosave, finding missing files; audio and MIDI settings,
 │  │                            macros and recent songs on disk
 │  ├─ templates.rs              the built-in song templates and the user's own
+│  ├─ crash.rs                  opt-in crash reports (the panic hook, listing and reading them)
 │  ├─ podcast.rs                leveling speakers, ducking music, chapters and chapters files
 │  └─ demo.rs                   the demo song
 └─ src/
@@ -626,7 +636,8 @@ soniq-studio/
    │                            keyboard shortcuts), device chain with instrument panels (drum
    │                            pads, sample slot), PluginPanel, AnalysisPanel, WarpControls,
    │                            WelcomeScreen (start page), LessonCard, HistoryPopover,
-   │                            MissingFilesDialog, FixDialog, PodcastPanel, SketchMode…
+   │                            MissingFilesDialog, FixDialog, PodcastPanel, SketchMode,
+   │                            AboutDialog (updates, crash reports), CrashGuard…
    └─ views/                    Arrange (markers, crossfades, groups, clip bar) + AutomationLane
                                 + TempoLane, Session, Mixer, Editor (+ editorCanvas: spectrogram,
                                 sample detail), PianoRoll

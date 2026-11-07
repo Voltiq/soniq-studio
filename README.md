@@ -38,7 +38,7 @@ Releases are built by GitHub Actions from a version tag: see [RELEASING.md](RELE
 > `LNK1104 cannot open file`. Move the project to a shorter path or set `CARGO_TARGET_DIR` to one,
 > for example `C:\t\soniq`.
 
-## What works today (phases 0–5, and phase 6 parts A and B)
+## What works today (phases 0–6)
 
 - **Real playback.** The Rust engine mixes audio clips and MIDI clips sample-accurately, with track volume,
   pan, mute, solo, master fader, a sample-accurate loop and a metronome. Meters and the playhead are
