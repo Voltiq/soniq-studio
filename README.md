@@ -15,7 +15,8 @@ Get the latest Windows setup (`Soniq Studio_…_x64-setup.exe`) from
 [Releases](https://github.com/Voltiq/soniq-studio/releases/latest). It installs for your user only (no
 admin prompt) and updates itself: Help › Check for updates, or once a day on its own (Settings).
 The setup isn't code-signed yet, so Windows SmartScreen may warn: choose More info › Run anyway.
-macOS and Linux builds appear there when they build; they are untested so far.
+macOS and Linux builds come from the next release on; they are untested so far, and CLAP and VST3 plugins
+only load on Windows for now (the plugin sandbox is Windows-only).
 
 Crash reports are off unless you switch them on (Help › Crash reports). They stay on your computer;
 copy one into an [issue](https://github.com/Voltiq/soniq-studio/issues) if you'd like it looked at.
