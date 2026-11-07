@@ -1,0 +1,17 @@
+{
+  "app": {
+    "windows": [
+      {
+        "title": "Soniq Studio",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 640,
+        "center": true,
+        "backgroundColor": "#0D0E11",
+        "decorations": false,
+        "shadow": true
+      }
+    ]
+  }
+}

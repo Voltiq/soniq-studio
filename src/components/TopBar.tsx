@@ -4,6 +4,7 @@ import { useStore } from "../state/store";
 import { Icon } from "./Icon";
 import { HistoryPopover } from "./HistoryPopover";
 import { CommandMenu } from "./Menu";
+import { WindowControls, customFrame, dragWindow } from "./WindowControls";
 
 export function TopBar() {
   const [open, setOpen] = useState<{ menu: MenuId; anchor: HTMLElement } | null>(null);
@@ -21,14 +22,16 @@ export function TopBar() {
   const { setMode, setTheme, undo, redo, setPaletteOpen, setSettingsOpen, setExportOpen } = useStore.getState();
 
   return (
-    <header className="topbar">
+    <header className={customFrame ? "topbar framed" : "topbar"} onMouseDown={dragWindow}>
       <div className="logo">
         <span className="mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="16" height="16">
             <path d="M3 12h2.5l2-5 3 10 3-8 2 5 1.5-2H21" />
           </svg>
         </span>
-        <span>Soniq</span>
+        <span className="app-name">
+          Soniq<span className="app-name-2"> Studio</span>
+        </span>
       </div>
 
       <nav className="menus" aria-label="Main menu">
@@ -48,7 +51,7 @@ export function TopBar() {
       </nav>
       {open && <CommandMenu menu={open.menu} anchor={open.anchor} onClose={() => setOpen(null)} />}
 
-      <button className="field cmd" type="button" onClick={() => setPaletteOpen(true)}>
+      <button className="field cmd" type="button" title="Search commands, devices and views  ·  Ctrl K" onClick={() => setPaletteOpen(true)}>
         <Icon name="search" size={15} className="dim" />
         <span className="cmd-text">Search commands, devices and views</span>
         <span className="kbd">Ctrl K</span>
@@ -118,6 +121,7 @@ export function TopBar() {
           Export
         </button>
       </div>
+      <WindowControls />
     </header>
   );
 }

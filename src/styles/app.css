@@ -787,13 +787,28 @@ code {
   margin-right: 6px;
 }
 
-@media (max-width: 1280px) {
-  .proj,
+/* The bar fits the window: the search shrinks to its icon and shortcut,
+   then to its icon, before anything else goes. */
+@media (max-width: 1600px) {
   .cmd-text {
     display: none;
   }
   .cmd {
     flex: none;
+  }
+}
+
+@media (max-width: 1480px) {
+  .cmd .kbd {
+    display: none;
+  }
+}
+
+@media (max-width: 1280px) {
+  .proj {
+    display: none;
+  }
+  .cmd {
     margin: 0;
   }
 }
@@ -2537,7 +2552,8 @@ code {
 .menu {
   --fill: var(--surface-2);
   position: fixed;
-  z-index: 60;
+  /* On the page itself (portalled), above panels and dialogs. */
+  z-index: 250;
   min-width: 260px;
   max-height: 70vh;
   overflow-y: auto;
@@ -5003,10 +5019,6 @@ code {
 
 .bpm.follows input {
   color: var(--warning);
-}
-
-.arrange {
-  container: arrange / inline-size;
 }
 
 .clip-hud {
@@ -7677,15 +7689,112 @@ button.select.sbox[aria-expanded="true"] .i.sbox-chev {
 
 /* A narrow arrangement (a side panel open): the clip toolbar keeps its
    controls and drops their words, so it never runs under the zoom control. */
-@container arrange (max-width: 900px) {
-  .clip-hud .slice-label,
-  .clip-hud .warp-label {
+.clip-hud.compact .slice-label,
+.clip-hud.compact .warp-label,
+.clip-hud.tight .clip-hud-name {
+  display: none;
+}
+
+/* ---------- The title bar (Windows: no system frame) ---------- */
+
+/* The top bar is the window's title bar: its empty space moves the window,
+   and the caption buttons sit flush in the top-right corner. */
+.topbar.framed {
+  padding-right: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.topbar.framed .top-right {
+  margin-right: 10px;
+}
+
+.app-name {
+  white-space: nowrap;
+}
+
+.app-name-2 {
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+@media (max-width: 1280px) {
+  .app-name-2 {
     display: none;
   }
 }
 
-@container arrange (max-width: 760px) {
-  .clip-hud .clip-hud-name {
-    display: none;
-  }
+.caption {
+  /* The bar's full height, from the window's top edge: stretched, and out over its padding. */
+  align-self: stretch;
+  display: flex;
+  flex: none;
+  margin: -10px 0 -10px auto;
+}
+
+:root[data-density="compact"] .caption {
+  margin-top: -6px;
+  margin-bottom: -6px;
+}
+
+.caption-btn {
+  width: 46px;
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: 10px "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  cursor: default;
+  transition:
+    background var(--d1) linear,
+    color var(--d1) linear;
+}
+
+.caption-btn:hover {
+  background: color-mix(in srgb, var(--text-1) 7%, transparent);
+}
+
+.caption-btn:active {
+  background: color-mix(in srgb, var(--text-1) 4%, transparent);
+  color: var(--text-2);
+}
+
+.caption-btn.close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+.caption-btn.close:active {
+  background: color-mix(in srgb, #c42b1c 90%, transparent);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.caption-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The window in the background: quieter glyphs, as the system's. */
+.caption.inactive .caption-btn:not(:hover) {
+  color: var(--text-3);
+}
+
+/* Short of room, the middle of the bar gives way (the project name takes an
+   ellipsis) so the controls at the right edge are never pushed out. */
+.topbar .top-right {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.topbar .proj {
+  min-width: 40px;
+  flex: 0 1 auto;
+}
+
+.topbar .top-right > :not(.proj) {
+  flex: none;
 }

@@ -788,9 +788,21 @@ function ClipHud() {
     const c = s.selectedClipId ? s.project.tracks.flatMap((t) => t.clips).find((x) => x.id === s.selectedClipId) : undefined;
     return c?.kind === "audio" && c.slot == null ? c : undefined;
   });
+  // A narrow arrangement (a side panel open): the toolbar drops its words so it
+  // never runs under the zoom control. Measured, not a container query: that
+  // would make the arrangement the frame for the menus opened inside it.
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(Infinity);
+  useEffect(() => {
+    const host = ref.current?.parentElement;
+    if (!host) return;
+    const watch = new ResizeObserver(() => setWidth(host.clientWidth));
+    watch.observe(host);
+    return () => watch.disconnect();
+  }, [clip?.id]);
   if (!clip) return null;
   return (
-    <div className="clip-hud glass">
+    <div ref={ref} className={`clip-hud glass${width < 900 ? " compact" : ""}${width < 760 ? " tight" : ""}`}>
       <span className="clip-hud-name" title={clip.name}>
         {clip.name}
       </span>

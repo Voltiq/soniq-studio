@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { COMMANDS, isEnabled, shortcutOf, type Command, type MenuId } from "../commands";
 import { useStore } from "../state/store";
 import { Icon } from "./Icon";
@@ -60,10 +61,13 @@ export function Popover({ anchor, onClose, children, label, align = "left" }: Po
       : { top: rect.bottom + 6, right: window.innerWidth - rect.right }
     : undefined;
 
-  return (
+  // On the page itself: inside frosted glass or a container, a fixed menu would
+  // be placed (and clipped) by that ancestor instead of the window.
+  return createPortal(
     <div ref={ref} className="menu shine" role="menu" aria-label={label} style={style}>
       {children}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
