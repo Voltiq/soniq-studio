@@ -24,7 +24,7 @@ use std::sync::Arc;
 use soniq_io::AudioBuffer;
 
 pub use common::Wave;
-pub use drums::{DrumRack, FIRST_PAD, PAD_NAMES, PADS};
+pub use drums::{BUILT_IN, DrumRack, FIRST_PAD, PAD_NAMES, PADS, PadChains, PadFx};
 pub use epiano::EPiano;
 pub use external::External;
 pub use fx::{AUDIO_FX_TYPES, AudioFx, BAND_TYPES, BANDS, Compressor, Limiter, Sidechain};
@@ -186,6 +186,14 @@ impl Instrument {
             Self::Drums(i) => i.render(left, right),
             Self::Rack(i) => i.render(left, right),
             Self::External(_) => {}
+        }
+    }
+
+    /// Where the coming block sits in the song, for effects inside the
+    /// instrument that follow the tempo (a Drum Rack's pad effects).
+    pub fn set_context(&mut self, ctx: &FxContext) {
+        if let Self::Drums(i) = self {
+            i.set_context(ctx);
         }
     }
 

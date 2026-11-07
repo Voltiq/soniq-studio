@@ -249,6 +249,8 @@ pub struct AppState {
     pub analyzer: Mutex<Option<soniq_io::Analyzer>>,
     /// The device whose output its panel shows as a live spectrum, its queue, and the meter.
     pub tap: Mutex<Option<(String, rtrb::Consumer<f32>, soniq_io::SpectrumMeter)>>,
+    /// The browser's folders of samples and presets.
+    pub library: Arc<Mutex<crate::library::Library>>,
 }
 
 pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

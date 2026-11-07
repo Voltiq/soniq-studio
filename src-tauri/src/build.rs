@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use soniq_dsp::{AudioFx, External, Instrument, Key, MacroLink, MidiFx, ParamBank, Params, Rack, RackLayer, SampleSlot, Warper};
+use soniq_dsp::{AudioFx, External, Instrument, Key, MacroLink, MidiFx, PadChains, PadFx, ParamBank, Params, Rack, RackLayer, SampleSlot, Warper};
 use soniq_engine::{ClipNode, ClipWarp, Dest, FadeShape, Follow, FxNode, InstrumentNode, LaneNode, ModNode, ModSource, ScheduledNote, SlotNode, db_to_gain, track_key};
 use soniq_project::{AutoTarget, Clip, ClipContent, Device, FadeCurve, DeviceParam, DeviceRole, MODULATOR_TYPES, PLUGIN_TYPE, TempoMap, Track, WarpMode};
 
@@ -93,6 +93,29 @@ fn rack(device: &Device, pool: &Pool, rate: u32) -> Instrument {
     Instrument::Rack(Rack::new(layers, &bank(device)))
 }
 
+/// A Drum Rack's pad effects and returns, as the engine runs them.
+fn pad_chains(device: &Device, rate: u32) -> PadChains {
+    let mut chains = PadChains::default();
+    for chain in &device.pad_chains {
+        let fx: Vec<PadFx> = chain
+            .devices
+            .iter()
+            .filter(|d| d.on && d.role == DeviceRole::Effect && d.kind != PLUGIN_TYPE)
+            .filter_map(|d| Some(PadFx { id: d.id.clone(), fx: AudioFx::build(&d.kind, rate, &bank(d))? }))
+            .collect();
+        match chain.key.as_str() {
+            "A" => chains.returns[0] = fx,
+            "B" => chains.returns[1] = fx,
+            key => {
+                if let Ok(note) = key.parse::<u8>() {
+                    chains.pads.push((note, fx));
+                }
+            }
+        }
+    }
+    chains
+}
+
 /// The track's instrument (the first one switched on) with its MIDI effects
 /// and every note its timeline clips play, in samples. Notes past a clip's
 /// end are cut there.
@@ -100,11 +123,14 @@ pub fn instrument_node(track: &Track, pool: &Pool, timeline: &Timeline, song_key
     let rate = timeline.rate as u32;
     let device = track.devices.iter().find(|d| d.role == DeviceRole::Instrument && d.on)?;
     let params = bank(device);
-    let instrument = match device.kind.as_str() {
+    let mut instrument = match device.kind.as_str() {
         "rack" => rack(device, pool, rate),
         PLUGIN_TYPE => Instrument::External(plugin(device, true)?),
         kind => Instrument::build(kind, rate, &params, &sample_slots(device, &params, pool))?,
     };
+    if let Instrument::Drums(drums) = &mut instrument {
+        drums.set_chains(pad_chains(device, rate));
+    }
     let fx: Vec<(String, MidiFx)> = track
         .devices
         .iter()

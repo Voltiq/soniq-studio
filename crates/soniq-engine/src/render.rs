@@ -18,10 +18,18 @@ use crate::tempo::TempoMap;
 use crate::transport::Transport;
 use crate::workers::Workers;
 
+/// How a preview plays: once or round and round, and on what beat grid it
+/// starts while the song plays (0: at once).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PreviewMode {
+    pub looping: bool,
+    pub grid: f64,
+}
+
 /// Messages to the audio thread besides new graphs.
 pub enum Control {
     /// Plays a buffer (at the engine rate) once, on top of everything else.
-    Preview(Arc<AudioBuffer>),
+    Preview(Arc<AudioBuffer>, PreviewMode),
     StopPreview,
     Monitor(Option<Box<MonitorFeed>>),
     /// Starts the clip in a scene's slot on the track with this key (`None`
@@ -154,6 +162,9 @@ pub struct Renderer {
     last_beat: i64,
     preview: Option<Arc<AudioBuffer>>,
     preview_pos: usize,
+    /// Frames of silence before the preview starts (to land on the beat), and whether it loops.
+    preview_delay: usize,
+    preview_loop: bool,
     monitor: Option<Box<MonitorFeed>>,
     /// The safety limiter's gain now, and how fast it comes back up per sample.
     safety_gain: f32,
@@ -182,6 +193,8 @@ impl Renderer {
             last_beat: -1,
             preview: None,
             preview_pos: 0,
+            preview_delay: 0,
+            preview_loop: false,
             monitor: None,
             safety_gain: 1.0,
             safety_release: 1.0 - (-1.0 / (0.1 * f64::from(sample_rate.max(1)))).exp() as f32,
@@ -294,11 +307,17 @@ impl Renderer {
     fn take_controls(&mut self) {
         while let Ok(message) = self.links.controls.pop() {
             match message {
-                Control::Preview(buffer) => {
+                Control::Preview(buffer, mode) => {
                     if let Some(old) = self.preview.replace(buffer) {
                         let _ = self.links.garbage.push(Garbage::Preview(old));
                     }
                     self.preview_pos = 0;
+                    self.preview_loop = mode.looping;
+                    // While the song plays, it starts on the next line of the grid.
+                    self.preview_delay = match self.expected {
+                        Some(pos) if mode.grid > 0.0 => (next_line(pos, mode.grid, self.tempo()) - pos) as usize,
+                        _ => 0,
+                    };
                     self.links.previewing.store(true, Ordering::Relaxed);
                 }
                 Control::StopPreview => self.end_preview(),
@@ -705,6 +724,7 @@ impl Renderer {
             let l = p.channels.first().map_or(&[][..], Vec::as_slice);
             (l, p.channels.get(1).map_or(l, Vec::as_slice))
         });
+        let (delay, looping) = (self.preview_delay, self.preview_loop);
         let (mut peak_l, mut peak_r) = (0.0_f32, 0.0_f32);
         // Only whole blocks go to the analysis: a full queue skips one.
         let analysing = self.links.analysing.load(Ordering::Relaxed);
@@ -713,8 +733,12 @@ impl Renderer {
             let g = prev + (target - prev) * (i + 1) as f32 / n as f32;
             left[i] *= g;
             right[i] *= g;
-            if let Some((pl, pr)) = preview {
-                let at = self.preview_pos + i;
+            if let Some((pl, pr)) = preview
+                && let Some(mut at) = (self.preview_pos + i).checked_sub(delay)
+            {
+                if looping && !pl.is_empty() {
+                    at %= pl.len();
+                }
                 left[i] += pl.get(at).copied().unwrap_or(0.0);
                 right[i] += pr.get(at).copied().unwrap_or(0.0);
             }
@@ -732,7 +756,7 @@ impl Renderer {
         self.links.master_meter.update(peak_l, peak_r);
         if let Some((pl, _)) = preview {
             self.preview_pos += n;
-            if self.preview_pos >= pl.len() {
+            if !looping && self.preview_pos >= delay + pl.len() {
                 self.end_preview();
             }
         }
@@ -1117,7 +1141,7 @@ mod tests {
         links.controls = controls;
         links.previewing = Arc::clone(&previewing);
         let mut r = Renderer::new(transport, 1000, links);
-        let _ = controls_tx.push(Control::Preview(Arc::new(AudioBuffer::new(1000, vec![vec![0.25; 150]]))));
+        let _ = controls_tx.push(Control::Preview(Arc::new(AudioBuffer::new(1000, vec![vec![0.25; 150]])), PreviewMode::default()));
         let mut out = vec![0.0_f32; 200];
         r.process(&mut out, 2);
         assert!(previewing.load(Ordering::Relaxed));
@@ -1126,6 +1150,32 @@ mod tests {
         assert_eq!(out[99], 0.25, "frame 49 of the second block is frame 149 of the preview");
         assert_eq!(out[100], 0.0);
         assert!(!previewing.load(Ordering::Relaxed), "the preview ended");
+    }
+
+    #[test]
+    fn an_audition_started_mid_beat_loops_from_the_next_beat() {
+        let transport = Arc::new(Transport::new());
+        transport.set_sample_rate(1000);
+        transport.set_bpm(120.0);
+        transport.set_playing(true);
+        let (mut controls_tx, controls) = rtrb::RingBuffer::new(4);
+        let mut links = Links::detached(Graph::empty());
+        links.controls = controls;
+        let mut r = Renderer::new(transport, 1000, links);
+        // 120 BPM at 1000 Hz: a beat every 500 frames. Play the first 100.
+        let mut out = vec![0.0_f32; 200];
+        r.process(&mut out, 2);
+        let _ = controls_tx.push(Control::Preview(Arc::new(AudioBuffer::new(1000, vec![vec![0.25; 300]])), PreviewMode { looping: true, grid: 1.0 }));
+        let mut heard = Vec::new();
+        for _ in 0..12 {
+            r.process(&mut out, 2);
+            heard.extend(out.iter().step_by(2).copied());
+        }
+        let first = heard.iter().position(|&x| x != 0.0).unwrap();
+        assert_eq!(first + 100, 500, "it starts on beat 2");
+        // It loops: still playing 300 frames after its first pass.
+        assert_eq!(heard[first + 300], 0.25);
+        assert_eq!(heard[first + 650], 0.25);
     }
 
     #[test]

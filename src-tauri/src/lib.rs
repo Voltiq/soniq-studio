@@ -4,6 +4,7 @@ mod crash;
 mod demo;
 mod devicewatch;
 mod files;
+mod library;
 mod freeze;
 mod midi;
 mod plugins;
@@ -53,6 +54,9 @@ pub fn run() {
             }
 
             let recovery = files::stash_autosave(&dirs.autosave(), &dirs.recovered());
+            // Presets go where people look for their files.
+            let presets = app.path().document_dir().map_or_else(|_| dirs.config.join("presets"), |d| d.join("Soniq Studio").join("Presets"));
+            let library = library::Library::load(&dirs.config, presets);
             let session = demo::session(engine.sample_rate());
             let midi_settings = settings::load_midi(&dirs.config);
             let (controls, control_moves) = std::sync::mpsc::channel();
@@ -81,6 +85,7 @@ pub fn run() {
                 plugins: plugins::Plugins::new(),
                 analyzer: Mutex::new(None),
                 tap: Mutex::new(None),
+                library: Arc::new(Mutex::new(library)),
             };
             app.manage(state);
             let state = app.state::<AppState>();
@@ -105,6 +110,17 @@ pub fn run() {
             commands::project_new,
             commands::engine_safety,
             commands::device_spectrum,
+            library::library_get,
+            library::library_add_folder,
+            library::library_remove_folder,
+            library::library_rescan,
+            library::library_favourite,
+            library::library_tags,
+            library::library_used,
+            library::library_audition,
+            library::library_stop,
+            library::preset_save,
+            library::preset_load,
             processing::clip_spectrum_plot,
             processing::clip_level,
             processing::clip_mark,

@@ -29,7 +29,8 @@ export function Popover({ anchor, onClose, children, label, align = "left" }: Po
     };
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey, true);
-    ref.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    // A field that focused itself keeps it; otherwise the first button gets it.
+    if (!ref.current?.contains(document.activeElement)) ref.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
     return () => {
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("keydown", onKey, true);

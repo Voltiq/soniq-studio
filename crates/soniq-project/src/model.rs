@@ -110,6 +110,17 @@ pub enum ChainOwner {
     GroupTrack,
     Return,
     Master,
+    /// A Drum Rack pad's effects, or one of the rack's returns.
+    Pad,
+}
+
+/// A chain inside a Drum Rack, addressed as `track/device/key`: the key is
+/// a pad's note ("36"–"99") or "A" / "B" for the rack's two returns.
+pub fn pad_path(owner: &str) -> Option<(&str, &str, &str)> {
+    let mut parts = owner.splitn(3, '/');
+    let (track, device, key) = (parts.next()?, parts.next()?, parts.next()?);
+    let valid = key == "A" || key == "B" || key.parse::<u8>().is_ok_and(|n| (36..=99).contains(&n));
+    valid.then_some((track, device, key))
 }
 
 /// A device in a chain, or the instrument of one of its instrument racks.
@@ -632,6 +643,19 @@ pub struct Device {
     /// The plugin's own state (base64) as of the last save.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    /// A Drum Rack's pad effect chains and its two returns.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pad_chains: Vec<PadChain>,
+}
+
+/// A Drum Rack pad's own audio effects, or one of the rack's two returns
+/// (which every pad's Send A and Send B feed).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PadChain {
+    /// The pad's note ("36"–"99"), or "A" / "B" for a return.
+    pub key: String,
+    pub devices: Vec<Device>,
 }
 
 /// The device type of a hosted plugin.
@@ -903,6 +927,10 @@ impl Project {
 
     /// The device chain of a track, a return track, or the master ([`MASTER`]).
     pub fn chain(&self, owner: &str) -> Option<&[Device]> {
+        if let Some((track, device, key)) = pad_path(owner) {
+            let rack = self.track(track)?.devices.iter().find(|d| d.id == device && d.kind == "drum-rack")?;
+            return Some(rack.pad_chains.iter().find(|c| c.key == key).map_or(&[][..], |c| c.devices.as_slice()));
+        }
         if owner == MASTER {
             return Some(&self.master_devices);
         }
@@ -914,6 +942,18 @@ impl Project {
 
     /// The device chain of a track, a return track or the master, and what holds it.
     pub fn chain_mut(&mut self, owner: &str) -> Option<(ChainOwner, &mut Vec<Device>)> {
+        if let Some((track, device, key)) = pad_path(owner) {
+            let track = self.tracks.iter_mut().find(|t| t.id == track)?;
+            let rack = track.devices.iter_mut().find(|d| d.id == device && d.kind == "drum-rack")?;
+            let at = match rack.pad_chains.iter().position(|c| c.key == key) {
+                Some(at) => at,
+                None => {
+                    rack.pad_chains.push(PadChain { key: key.to_string(), devices: Vec::new() });
+                    rack.pad_chains.len() - 1
+                }
+            };
+            return Some((ChainOwner::Pad, &mut rack.pad_chains[at].devices));
+        }
         if owner == MASTER {
             return Some((ChainOwner::Master, &mut self.master_devices));
         }
@@ -1016,6 +1056,16 @@ impl Project {
             for chain in &mut device.chains {
                 catalog::refresh(&mut chain.device);
             }
+            for chain in &mut device.pad_chains {
+                chain.devices.iter_mut().for_each(catalog::refresh);
+            }
+        }
+    }
+
+    /// Drum Rack chains left without effects go.
+    pub fn prune_pad_chains(&mut self) {
+        for device in self.tracks.iter_mut().flat_map(|t| t.devices.iter_mut()) {
+            device.pad_chains.retain(|c| !c.devices.is_empty());
         }
     }
 

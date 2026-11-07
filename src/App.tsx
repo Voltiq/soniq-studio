@@ -10,6 +10,7 @@ import { WelcomeScreen } from "./components/WelcomeScreen";
 import { PodcastPanel } from "./components/PodcastPanel";
 import { AboutDialog } from "./components/AboutDialog";
 import { AnalyzeDialog } from "./components/AnalyzeDialog";
+import { dropTarget } from "./components/dropTarget";
 import { SketchMode } from "./components/SketchMode";
 import { BrowserPanel } from "./components/BrowserPanel";
 import { CommandPalette } from "./components/CommandPalette";
@@ -240,16 +241,6 @@ function useShortcuts() {
 const extension = (path: string) => path.split(".").pop()?.toLowerCase() ?? "";
 const isAudioFile = (path: string) => AUDIO_EXTENSIONS.includes(extension(path));
 const isMidiFile = (path: string) => MIDI_EXTENSIONS.includes(extension(path));
-
-/** What sits under a window position: a sampler or drum pad, or a lane and the beat there. */
-function dropTarget(x: number, y: number): { el: HTMLElement | null; sample?: HTMLElement; lane?: HTMLElement; beats?: number } {
-  const el = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-sample-target], [data-track-id], [data-new-track]") ?? null;
-  if (!el) return { el };
-  if (el.dataset.sampleTarget) return { el, sample: el };
-  const s = useStore.getState();
-  const beats = Math.max(0, Math.round((x - el.getBoundingClientRect().left) / s.pxPerBeat));
-  return { el, lane: el, beats };
-}
 
 /** Files dragged in from Explorer land where they are dropped: audio and MIDI on the timeline, samples on a sampler or pad. */
 function useFileDrop() {

@@ -143,6 +143,62 @@ export interface Device {
   plugin?: PluginRef;
   /** The plugin's own state (base64) as of the last save. */
   state?: string;
+  /** A Drum Rack's pad effects and its returns A and B. */
+  padChains?: PadChain[];
+}
+
+/** A Drum Rack pad's audio effects (key: its note), or return "A" or "B". */
+export interface PadChain {
+  key: string;
+  devices: Device[];
+}
+
+/** A key (loops) or a root note (one-shots), as the library heard it. */
+export interface KeyGuess {
+  tonic: number;
+  minor: boolean;
+  root: boolean;
+}
+
+export interface SampleInfo {
+  seconds: number;
+  channels: number;
+  sampleRate: number;
+  kind: "oneShot" | "loop";
+  bpm: number | null;
+  key: KeyGuess | null;
+  peakDb: number;
+}
+
+export interface LibraryEntry {
+  path: string;
+  name: string;
+  folder: string;
+  kind: "sample" | "preset";
+  size: number;
+  modified: number;
+  info?: SampleInfo;
+  autoTags: string[];
+  device?: string;
+  error?: string;
+}
+
+export interface LibraryView {
+  folders: string[];
+  entries: LibraryEntry[];
+  favourites: string[];
+  tags: Record<string, string[]>;
+  recent: string[];
+  /** While indexing: files done and files to do. */
+  scanning: [number, number] | null;
+  presets: string;
+}
+
+export interface Audition {
+  seconds: number;
+  looping: boolean;
+  fromBpm: number | null;
+  semitones: number;
 }
 
 export interface PluginRef {

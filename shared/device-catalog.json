@@ -4,29 +4,36 @@
     "name": "Drum Rack",
     "role": "instrument",
     "category": "instrument",
-    "description": "16 pads with built-in drums; drop your own samples on them",
+    "description": "64 pads in four pages: built-in drums and percussion, your samples, effects per pad",
     "phase": 3,
     "params": [
       { "id": "tune", "label": "Tune", "min": -12, "max": 12, "default": 0, "unit": "st", "bipolar": true, "step": 1 },
       { "id": "volume", "label": "Volume", "min": -36, "max": 6, "default": 0, "unit": "dB" }
     ],
     "pads": {
-      "count": 16,
+      "count": 64,
       "first": 36,
-      "names": ["Kick", "Rim", "Snare", "Clap", "Snare 2", "Floor tom", "Closed hat", "Low tom", "Pedal hat", "Mid tom", "Open hat", "Mid tom 2", "High tom", "Crash", "High tom 2", "Ride"],
+      "names": ["Kick", "Rim", "Snare", "Clap", "Snare 2", "Floor tom", "Closed hat", "Low tom", "Pedal hat", "Mid tom", "Open hat", "Mid tom 2", "High tom", "Crash", "High tom 2", "Ride",
+        "China", "Ride bell", "Tambourine", "Splash", "Cowbell", "Crash 2", "Vibraslap", "Ride 2", "Hi bongo", "Low bongo", "Mute conga", "Open conga", "Low conga", "Hi timbale", "Low timbale", "Hi agogo", "Low agogo", "Cabasa", "Maracas", "Short whistle", "Long whistle", "Short guiro", "Long guiro", "Claves", "Hi wood block", "Low wood block", "Mute cuica", "Open cuica", "Mute triangle", "Open triangle", "Pad 47", "Pad 48", "Pad 49", "Pad 50", "Pad 51", "Pad 52", "Pad 53", "Pad 54", "Pad 55", "Pad 56", "Pad 57", "Pad 58", "Pad 59", "Pad 60", "Pad 61", "Pad 62", "Pad 63", "Pad 64"],
       "params": [
         { "id": "tune", "label": "Tune", "min": -24, "max": 24, "default": 0, "unit": "st", "bipolar": true, "step": 1 },
         { "id": "vol", "label": "Level", "min": -36, "max": 6, "default": 0, "unit": "dB" },
         { "id": "pan", "label": "Pan", "min": -100, "max": 100, "default": 0, "unit": "", "bipolar": true },
         { "id": "decay", "label": "Decay", "min": 5, "max": 400, "default": 100, "unit": "%", "log": true },
-        { "id": "choke", "label": "Choke", "min": 0, "max": 4, "default": 0, "unit": "", "step": 1, "options": ["None", "1", "2", "3", "4"] }
+        { "id": "choke", "label": "Choke", "min": 0, "max": 4, "default": 0, "unit": "", "step": 1, "options": ["None", "1", "2", "3", "4"] },
+        { "id": "sendA", "label": "Send A", "min": -60, "max": 0, "default": -60, "unit": "dB" },
+        { "id": "sendB", "label": "Send B", "min": -60, "max": 0, "default": -60, "unit": "dB" }
       ],
       "defaults": {
         "42": { "choke": 1, "pan": 15 },
         "44": { "choke": 1, "pan": 15 },
         "46": { "choke": 1, "pan": 15 },
         "49": { "pan": -20 },
-        "51": { "pan": 25 }
+        "51": { "pan": 25 },
+        "78": { "choke": 3 },
+        "79": { "choke": 3 },
+        "80": { "choke": 2 },
+        "81": { "choke": 2 }
       }
     }
   },

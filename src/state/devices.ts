@@ -48,7 +48,7 @@ export const SIDECHAIN_TYPES = new Set(["comp", "gate", "vocoder"]);
 export interface ChainHost {
   id: string;
   name: string;
-  kind: "midi" | "audio" | "group" | "return" | "master";
+  kind: "midi" | "audio" | "group" | "return" | "master" | "pad";
   devices: Device[];
   /** Track colour; 0 for returns and the master. */
   color: number;
@@ -57,6 +57,19 @@ export interface ChainHost {
 /** The chain with this owner id (a track, a return, or MASTER). */
 export function chainHost(project: Project, id: string | null): ChainHost | null {
   if (!id) return null;
+  // A Drum Rack pad's effects, or one of its returns: "track/device/key".
+  const parts = id.split("/");
+  if (parts.length === 3) {
+    const [t, d, key] = parts;
+    const track = project.tracks.find((x) => x.id === t);
+    const rack = track?.devices.find((x) => x.id === d && x.type === "drum-rack");
+    if (!track || !rack) return null;
+    // A pad playing a sample goes by the sample's name.
+    const sample = rack.samples?.find((x) => String(x.key) === key);
+    const sampleName = sample && project.assets.find((a) => a.id === sample.asset)?.name.replace(/\.[^.]+$/, "");
+    const what = key === "A" || key === "B" ? `Return ${key}` : (sampleName ?? padName(Number(key)));
+    return { id, name: `${track.name} · ${what}`, kind: "pad", devices: rack.padChains?.find((c) => c.key === key)?.devices ?? [], color: track.color };
+  }
   if (id === MASTER) return { id, name: "Master", kind: "master", devices: project.masterDevices ?? [], color: 0 };
   const track = project.tracks.find((t) => t.id === id);
   if (track) return { id, name: track.name, kind: track.kind, devices: track.devices, color: track.color };

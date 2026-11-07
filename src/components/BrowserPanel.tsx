@@ -3,6 +3,7 @@ import { inTauri } from "../engine/bridge";
 import { DEVICE_CATALOG, LIVE_TYPES, chainHost, type DeviceSpec } from "../state/devices";
 import { useStore } from "../state/store";
 import { Icon, type IconName } from "./Icon";
+import { LibraryItems } from "./LibraryPanel";
 import { trackVar } from "./trackColor";
 
 type Category = "all" | DeviceSpec["category"] | "samples" | "plugins";
@@ -13,7 +14,7 @@ const CATEGORIES: [Category, string][] = [
   ["audio-fx", "Audio FX"],
   ["midi-fx", "MIDI FX"],
   ["modulator", "Modulators"],
-  ["samples", "Samples"],
+  ["samples", "Library"],
   ["plugins", "Plugins"],
 ];
 
@@ -123,8 +124,8 @@ export function BrowserPanel() {
   const owner = useStore((s) => s.chainOwner ?? s.selectedTrackId);
   const track = useMemo(() => chainHost(project, owner), [project, owner]);
   const addDevice = useStore((s) => s.addDevice);
-  const importAudio = useStore((s) => s.importAudio);
   const pluginCount = useStore((s) => s.pluginList?.plugins.length);
+  const libraryCount = useStore((s) => s.library?.entries.length);
 
   const items = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -135,13 +136,15 @@ export function BrowserPanel() {
     <aside className="browser card shine" aria-label="Browser">
       <div className="ph">
         <h2 className="pt">Browser</h2>
-        <span className="muted">{cat === "plugins" ? `${pluginCount ?? 0} plugins` : `${DEVICE_CATALOG.length} devices`}</span>
+        <span className="muted">
+          {cat === "plugins" ? `${pluginCount ?? 0} plugins` : cat === "samples" ? `${libraryCount ?? 0} items` : `${DEVICE_CATALOG.length} devices`}
+        </span>
       </div>
       <label className="field">
         <Icon name="search" size={15} className="dim" />
         <input
           type="search"
-          placeholder={cat === "plugins" ? "Search plugins" : "Search devices"}
+          placeholder={cat === "plugins" ? "Search plugins" : cat === "samples" ? "Search samples, tags, keys" : "Search devices"}
           aria-label="Search the browser"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -157,18 +160,7 @@ export function BrowserPanel() {
 
       <div className="blist" role="list">
         {cat === "samples" ? (
-          <div className="empty">
-            <Icon name="folder" size={22} />
-            <p>
-              <b>Your sample folders go here</b>
-              Folder indexing and previews in time with the song come next. For now, import files or drag them in from Explorer.
-              <span>
-                <button className="btn sm" type="button" onClick={() => void importAudio()}>
-                  Import audio…
-                </button>
-              </span>
-            </p>
-          </div>
+          <LibraryItems query={query} owner={track?.id} />
         ) : cat === "plugins" ? (
           <PluginItems query={query} owner={track?.id} />
         ) : items.length === 0 ? (

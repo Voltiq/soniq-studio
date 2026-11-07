@@ -7094,3 +7094,305 @@ code {
 .contrast-result.pass .i {
   color: var(--success);
 }
+
+/* ---------- Library ---------- */
+
+.library {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.lib-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.lib-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.lib-scan {
+  position: relative;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow: hidden;
+}
+
+.lib-scan > span:last-child {
+  position: relative;
+}
+
+.lib-scan-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent-soft);
+  transition: width var(--d2);
+}
+
+.lib-folders {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 8px;
+  list-style: none;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 11.5px;
+}
+
+.lib-folders li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lib-folders li > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-filters {
+  gap: 4px;
+}
+
+.chipb.sm {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11.5px;
+}
+
+.lib-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.litem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 2px;
+  border-radius: 10px;
+}
+
+.litem:hover {
+  background: var(--surface-2);
+}
+
+.litem.on {
+  background: var(--accent-soft);
+}
+
+.litem.bad .bname {
+  color: var(--text-3);
+}
+
+.lplay {
+  flex: none;
+}
+
+.ltext {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.ltext .bname,
+.ltext .bdesc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ltags {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.ltag {
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  font-size: 10px;
+  line-height: 15px;
+  color: var(--text-3);
+}
+
+.ltag.mine {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.lmore,
+.lstar {
+  flex: none;
+  opacity: 0;
+}
+
+.litem:hover .lmore,
+.litem:hover .lstar,
+.litem:focus-within .lmore,
+.litem:focus-within .lstar,
+.lstar.on {
+  opacity: 1;
+}
+
+.lstar.on {
+  color: var(--warning);
+}
+
+.lstar.on .i {
+  fill: currentColor;
+}
+
+.lib-more {
+  padding: 8px;
+  font-size: 11.5px;
+}
+
+.tag-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 240px;
+  padding: 6px;
+  font-size: 12px;
+}
+
+.drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
+  max-width: 220px;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  box-shadow: var(--sh-2);
+}
+
+body.dragging-item,
+body.dragging-item * {
+  cursor: grabbing !important;
+}
+
+.drop-target.chain,
+.drop-target[data-track-id],
+.drop-target[data-new-track] {
+  box-shadow: inset 0 0 0 2px var(--accent-line);
+}
+
+/* ---------- Drum Rack pages and pad effects ---------- */
+
+.pad-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pad-pages {
+  display: flex;
+  gap: 2px;
+}
+
+.pad-pages button {
+  flex: 1;
+  height: 20px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pad-pages button[aria-selected="true"] {
+  background: var(--surface-3);
+  color: var(--text-1);
+  box-shadow: var(--inset-hi);
+}
+
+.pad-pages button.used::after {
+  content: "•";
+  margin-left: 2px;
+  color: var(--accent);
+}
+
+.pad.empty-pad {
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+
+.pad.has-fx::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 12px;
+  width: 5px;
+  height: 5px;
+  border-radius: 1.5px;
+  background: var(--warning);
+}
+
+.pad-chains {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.pad-chains .count {
+  min-width: 14px;
+  padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+}
+
+.pad-chain-empty {
+  align-self: center;
+  max-width: 260px;
+  font-size: 12px;
+}
+
+.i.flip {
+  transform: scaleX(-1);
+}

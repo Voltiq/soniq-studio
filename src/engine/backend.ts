@@ -15,6 +15,9 @@ import type {
   ExportReport,
   ChaptersFile,
   CrashStatus,
+  Audition,
+  Device,
+  LibraryView,
   MarkKind,
   SpectrumPlot,
   FixAnalysis,
@@ -154,6 +157,19 @@ export interface Backend {
   sliceToMidi(clip: string, division: number | null): Promise<ProjectReply>;
   /** The CLAP plugins in the standard folders and the user's (new or changed files are scanned; all on `rescan`). */
   pluginsList(rescan: boolean): Promise<PluginList>;
+  libraryGet(): Promise<LibraryView>;
+  libraryAddFolder(path: string): Promise<LibraryView>;
+  libraryRemoveFolder(path: string): Promise<LibraryView>;
+  libraryRescan(): Promise<LibraryView>;
+  libraryFavourite(path: string, on: boolean): Promise<void>;
+  libraryTags(path: string, tags: string[]): Promise<string[]>;
+  libraryUsed(path: string): Promise<void>;
+  /** Plays a library sample; in time, stretched to the song's tempo and moved to its key. */
+  libraryAudition(path: string, sync: boolean): Promise<Audition>;
+  libraryStop(): Promise<void>;
+  /** Saves a device as a preset file; returns its path. */
+  presetSave(owner: string, device: string, name: string): Promise<string>;
+  presetLoad(path: string): Promise<Device>;
   pluginsSetFolders(folders: string[]): Promise<PluginList>;
   /** Adds a plugin to a chain (a track, a return or the master), starting it in its sandbox. */
   pluginAdd(track: string, path: string, id: string): Promise<ProjectReply>;
@@ -279,6 +295,17 @@ const desktop: Backend = {
   warpClip: (clip, mode) => invoke("clip_warp", { clip, mode: mode ?? null }),
   sliceToMidi: (clip, division) => invoke("slice_to_midi", { clip, division }),
   pluginsList: (rescan) => invoke("plugins_list", { rescan }),
+  libraryGet: () => invoke("library_get"),
+  libraryAddFolder: (path) => invoke("library_add_folder", { path }),
+  libraryRemoveFolder: (path) => invoke("library_remove_folder", { path }),
+  libraryRescan: () => invoke("library_rescan"),
+  libraryFavourite: (path, on) => invoke("library_favourite", { path, on }),
+  libraryTags: (path, tags) => invoke("library_tags", { path, tags }),
+  libraryUsed: (path) => invoke("library_used", { path }),
+  libraryAudition: (path, sync) => invoke("library_audition", { path, sync }),
+  libraryStop: () => invoke("library_stop"),
+  presetSave: (owner, device, name) => invoke("preset_save", { owner, device, name }),
+  presetLoad: (path) => invoke("preset_load", { path }),
   pluginsSetFolders: (folders) => invoke("plugins_set_folders", { folders }),
   pluginAdd: (track, path, id) => invoke("plugin_add", { track, path, id }),
   pluginWindow: (device, show) => invoke("plugin_window", { device, show }),

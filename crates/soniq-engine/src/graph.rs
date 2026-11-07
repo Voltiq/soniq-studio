@@ -407,6 +407,7 @@ impl InstrumentNode {
             plugin.process(ctx, left, right, a);
             return;
         }
+        instrument.set_context(ctx);
         let mut cursor = 0;
         for e in a.iter() {
             let at = (e.at as usize).min(n);

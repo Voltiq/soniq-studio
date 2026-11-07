@@ -47,8 +47,9 @@ Releases are built by GitHub Actions from a version tag: see [RELEASING.md](RELE
 - **Instruments.** MIDI tracks play through a built-in instrument: **Soniq Synth** (two oscillators and a
   sub, unison, filter with drive, two envelopes, LFO and vibrato, poly/mono/legato with glide), **Electric
   Piano**, **Sampler** (classic, one-shot, loop, or sliced: equal pieces or at the transients, one key
-  per slice, "To clip" writes the slices out as a MIDI clip; plus an LFO) and **Drum Rack** (16 pads with
-  a built-in kit; drop your own samples on any pad). The **Instrument Rack** layers instruments or splits
+  per slice, "To clip" writes the slices out as a MIDI clip; plus an LFO) and **Drum Rack** (64 pads in four
+  pages with a built-in kit and percussion; drop your own samples on any pad, give each pad its own
+  effects and sends into the rack's two returns). The **Instrument Rack** layers instruments or splits
   them by key and velocity, with eight macros: right-click a chain's knob to map it to one. Add them from
   the browser; their controls are in the device chain.
 - **MIDI effects.** Arpeggiator, Chord, Scale, Note Length, Random and Velocity sit before the instrument
@@ -61,6 +62,10 @@ Releases are built by GitHub Actions from a version tag: see [RELEASING.md](RELE
   or gate can listen to another track (Sidechain), so the bass ducks under the kick; a vocoder can speak
   through another track (Carrier track, with Carrier set to "Sidechain track"). In the mixer, click a
   return's or the master's name to open its chain.
+- **Library.** Browser › Library indexes your sample and preset folders: loop or one-shot, tempo, key
+  and tags from the names; search, favourites, your own tags and recent items. Click to hear a sample in
+  time with the song (stretched to its tempo, moved to its key), drag it onto a track or a pad. Any
+  built-in device saves as a preset (the book button on it).
 - **Plugins (CLAP and VST3).** Browser › Plugins lists the CLAP and VST3 plugins in the standard folders and any you add
   (Add a folder…, or Settings). Click one to add it to the selected track, a return or the master; an
   instrument plugin replaces the track's instrument. Each plugin runs in a sandbox of its own: if it

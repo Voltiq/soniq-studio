@@ -518,6 +518,7 @@ pub async fn plugin_add(state: State<'_, AppState>, track: String, path: String,
         modulates: None,
         plugin: Some(PluginRef { format: format_of(&path).into(), path, id, vendor: descriptor.vendor.clone() }),
         state: None,
+        pad_chains: Vec::new(),
     };
 
     let mut session = lock(&state.session);

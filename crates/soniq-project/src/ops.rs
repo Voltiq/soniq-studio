@@ -487,6 +487,9 @@ fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
             if MODULATOR_TYPES.contains(&device.kind.as_str()) && matches!(owner, ChainOwner::Return | ChainOwner::Master) {
                 return Err(OpError::Invalid(format!("{} works on tracks", device.name)));
             }
+            if owner == ChainOwner::Pad && (device.role != DeviceRole::Effect || midi_fx || MODULATOR_TYPES.contains(&device.kind.as_str()) || device.kind == PLUGIN_TYPE) {
+                return Err(OpError::Invalid(format!("Drum pads take built-in audio effects; {} goes on the track", device.name)));
+            }
             device.id = crate::new_id("dev");
             device.sidechain = None;
             device.modulates = None;
@@ -508,6 +511,7 @@ fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
             let (_, devices) = chain_mut(project, &track)?;
             let index = devices.iter().position(|d| d.id == device).ok_or(OpError::NoDevice(device))?;
             let removed = devices.remove(index);
+            project.prune_pad_chains();
             project.prune_assets();
             project.prune_mappings();
             project.prune_targets();
@@ -1738,6 +1742,37 @@ mod tests {
         assert!(project.asset("a1").is_none());
         apply(&mut project, &mut history, Op::SetParam { track: midi, device: rack, param: "p38.tune".into(), value: 2.6 }).unwrap();
         assert_eq!(project.tracks[2].devices[0].param("p38.tune"), Some(3.0));
+    }
+
+    #[test]
+    fn drum_pads_and_returns_hold_audio_effects() {
+        let mut project = Project::empty("Song");
+        let mut history = History::new();
+        let midi = project.tracks[2].id.clone();
+        let rack = crate::catalog::device("drum-rack", &[]).unwrap();
+        apply(&mut project, &mut history, Op::AddDevice { track: midi.clone(), device: rack }).unwrap();
+        let rack = project.tracks[2].devices[0].id.clone();
+        let pad = format!("{midi}/{rack}/38");
+        let ret = format!("{midi}/{rack}/A");
+        let device = |kind| crate::catalog::device(kind, &[]).unwrap();
+        apply(&mut project, &mut history, Op::AddDevice { track: pad.clone(), device: device("comp") }).unwrap();
+        apply(&mut project, &mut history, Op::AddDevice { track: ret.clone(), device: device("reverb") }).unwrap();
+        assert!(apply(&mut project, &mut history, Op::AddDevice { track: pad.clone(), device: device("synth") }).is_err(), "no instruments on a pad");
+        assert!(apply(&mut project, &mut history, Op::AddDevice { track: pad.clone(), device: device("arp") }).is_err(), "no MIDI effects on a pad");
+        assert!(apply(&mut project, &mut history, Op::AddDevice { track: format!("{midi}/{rack}/100"), device: device("eq") }).is_err(), "no pad 100");
+        let chains = &project.tracks[2].devices[0].pad_chains;
+        assert_eq!(chains.iter().map(|c| (c.key.as_str(), c.devices.len())).collect::<Vec<_>>(), [("38", 1), ("A", 1)]);
+        // Their knobs and switches work through the same chain path.
+        let comp = chains[0].devices[0].id.clone();
+        apply(&mut project, &mut history, Op::SetParam { track: pad.clone(), device: comp.clone(), param: "ratio".into(), value: 8.0 }).unwrap();
+        apply(&mut project, &mut history, Op::ToggleDevice { track: pad.clone(), device: comp.clone() }).unwrap();
+        let c = &project.chain(&pad).unwrap()[0];
+        assert_eq!((c.param("ratio"), c.on), (Some(8.0), false));
+        // Removing the last effect drops the pad's chain; undo brings it back.
+        apply(&mut project, &mut history, Op::RemoveDevice { track: pad.clone(), device: comp }).unwrap();
+        assert_eq!(project.tracks[2].devices[0].pad_chains.len(), 1);
+        history.undo(&mut project);
+        assert_eq!(project.tracks[2].devices[0].pad_chains.len(), 2);
     }
 
     #[test]

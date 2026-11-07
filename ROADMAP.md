@@ -247,7 +247,7 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 - [x] **P0** Sampler LFO on pitch, filter cutoff or volume (rate and amount)
 - [ ] **P1** Sampler still to come: slicing on the beat grid and by hand
 - [x] **P0** **Drum Rack**: 16 pads on the General MIDI drum map, each with a built-in synthesized drum (kick, snare, clap, rim, toms, hats, crash, ride) or a dropped-in sample, its own tune, level, pan and decay, and choke groups (closed hat cuts the open one)
-- [ ] **P0** Drum Rack still to come: more pads in pages, an effect chain and sends per pad
+- [x] **P0** Drum Rack: 64 pads in four pages (the kit, General MIDI percussion to note 81, then empty pads for samples), audio effects per pad, and Send A and B per pad into the rack's two returns, each with its own effects (Phase 7 Part D)
 - [x] **P0** **Synth**: two oscillators plus a sub, saw/square/triangle/sine (band-limited), unison with spread, a 12/24 dB low-pass, band-pass and high-pass filter with drive, two ADSR envelopes, an LFO on the cutoff and vibrato, poly, mono and legato with glide
 - [ ] **P1** Wavetable synth with a modulation matrix
 - [x] **P1** A simple electric piano (two-operator FM tines, tremolo)
@@ -295,10 +295,10 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 
 ### 5.12 Browser & library
 - [x] **P0** Browser panel with search, category chips and items; click an effect to add it to the selected track (UI)
-- [ ] **P0** Index folders of samples and presets; tags; favourites; recent items
-- [ ] **P0** Audition with preview playback synced to the project tempo and key
+- [x] **P0** Index folders of samples and presets; tags; favourites; recent items (Browser › Library; Phase 7 Part D)
+- [x] **P0** Audition with preview playback synced to the project tempo and key (Phase 7 Part D)
 - [ ] **P1** Similarity search ("find similar samples") using local audio embeddings
-- [ ] **P1** User presets for every device, saved as plain files
+- [x] **P1** User presets for every built-in device, saved as plain files (the book button on a device; Documents › Soniq Studio › Presets; Phase 7 Part D)
 - [ ] **P2** Pack manager for bundled and downloadable content
 
 ### 5.13 Plugins
@@ -555,10 +555,15 @@ Every P0 item the earlier phases left open, so nothing a first-time user leans o
 - [x] Rust tests (240 in total) now also cover the spectrum plot (a sine's peak bin and level), RMS, clipping runs (joined and separate), labelled sounds (two bursts, short gaps bridged), and an engine test where a compressor reports its reduction and a tap hears its output
 - [ ] Not tried yet: watching the meters move, which needs playback. Checked in the desktop app (silent): a generated test file with four hits, one clipped: Find clipping marked 1 stretch at 2.00–2.05 s, Beat finder 4 beats at 0.5, 2, 3.5 and 5 s, Label sounds 4 sounds; Contrast of a hit against silence passing; Plot spectrum peaking at 440 Hz with the clipping's harmonics; GR meters on the compressor, gate and limiter (none on the EQ); the EQ's spectrum layer in place; no console errors
 
-**Part D — library and drums** (§5.7, §5.12)
-- [ ] The browser indexes your sample and preset folders: search, tags, favourites, recent items
-- [ ] Audition samples in time with the song's tempo (and key, for tonal ones) before adding them
-- [ ] Drum Rack: more pads in pages, an effect chain and sends for each pad
+**Part D ✅ — library and drums** (§5.7, §5.12)
+- [x] Browser › Library: add folders of samples and presets; Soniq indexes them in the background (on every core, unchanged files kept, progress shown) and listens to each sample once: loop or one-shot, a loop's tempo (from its name, "120bpm" or "_124_", or heard), a key for pitched loops and a root note for pitched one-shots (chroma against key profiles; drums are never given one), and tags from the file and folder names (kick, snare, hat, bass, pad, vocal, fx, loop…). Search by name, tag, key or tempo; filter by favourites, recent, loops, one-shots, presets and the most used tags; star favourites and add your own tags. Kept in `library.json` with the app's settings
+- [x] Audition: click a sample to hear it (again to stop). "In time" (on by default, remembered) stretches a loop to the song's tempo and loops it from the next bar while the song plays; a pitched sample moves to the song's key the short way (a minor loop into its relative major, and back); one-shots start on the next beat. Off, it plays as it is, at once
+- [x] Library items drag by pointer (HTML drag and drop is off in the desktop window): a sample onto a track lane (at that beat), a drum pad or a sampler; a preset onto any device chain. Double-click adds a sample to the song or a preset to the chain on show; whatever goes in tops Recent
+- [x] Presets: the book button on any built-in device saves it, with its settings and any pad effects, to Documents › Soniq Studio › Presets › its device (samples stay with the song); loading gives everything fresh ids and brings parameters up to date
+- [x] Drum Rack: 64 pads in four pages (Kit, Perc, Perc 2, More). 30 new built-in sounds on notes 52–81, the General MIDI percussion (china, splash, ride bell, tambourine, cowbell, vibraslap, bongos, congas, timbales, agogos, cabasa, maracas, whistles, guiros, claves, wood blocks, cuícas, triangles with their own choke group); pads 82–99 play only samples
+- [x] Each pad can have its own audio effects, and Send A and Send B (off at −60 dB) into the rack's two returns, which have effects too ("Pad effects", "Return A", "Return B" open the chain in the devices panel, with a way back). Sends are taken after the pad's effects; effects ring out for 8 s after the last hit and keep their state when the song changes. Pads without effects or sends cost nothing extra
+- [x] Rust tests (253 in total) now also cover name tags, tempos and keys, a pitched one-shot's root, noise left keyless, a chord loop's key, moving keys the short way, a click loop's tempo, every built-in pad's level, empty pads, a pad's effects touching only it, sends through a return, a reverb ringing past the hit, pad chains in the song (only audio effects, knobs and switches, undo), and an audition looping from the next beat
+- [ ] Not tried yet: hearing an audition, which needs sound. Effects inside the rack have no meters, live spectrum or automation lanes yet. Checked in the desktop app (silent): a test folder indexed (kick: one-shot tagged drums and kick; a click loop at 120 BPM; a pad named in A minor); favourites, your own tags and Recent; the kick dragged onto a pad and a loop onto Audio 1 at beat 4; the Perc page's pads and the empty More page; a compressor on one pad (a synth refused), a reverb on Return A and the pad's Send A at −6 dB; the kit saved as a preset and added to another track with its pad effects and fresh ids
 
 ---
 

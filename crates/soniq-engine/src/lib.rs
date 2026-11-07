@@ -37,7 +37,7 @@ pub use launch::{ClipState, ClipStatus, Follow, Launched, SlotNode};
 pub use meters::{Meters, PeakMeter, Safety};
 pub use offline::render_offline;
 pub use record::{InputStatus, Recorder, TAKE_SUFFIX, Take};
-pub use render::{ALL_TRACKS, LiveEvent, MonitorFeed, Renderer};
+pub use render::{ALL_TRACKS, LiveEvent, MonitorFeed, PreviewMode, Renderer};
 pub use soniq_dsp::NoteEvent;
 
 use render::{Control, Garbage, Links};
@@ -317,7 +317,13 @@ impl AudioEngine {
 
     /// Plays `buffer` (at the engine rate) once, on top of the mix.
     pub fn preview(&self, buffer: Arc<AudioBuffer>) -> Result<(), String> {
-        self.send(Control::Preview(buffer))?;
+        self.audition(buffer, PreviewMode::default())
+    }
+
+    /// Plays `buffer` (at the engine rate) on top of the mix, looping or
+    /// once, and while the song plays starting on its beat grid.
+    pub fn audition(&self, buffer: Arc<AudioBuffer>, mode: PreviewMode) -> Result<(), String> {
+        self.send(Control::Preview(buffer, mode))?;
         // Report it as playing right away, before the audio thread picks it up.
         self.previewing.store(true, Ordering::Relaxed);
         Ok(())

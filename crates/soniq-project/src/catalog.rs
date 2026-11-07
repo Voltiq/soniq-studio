@@ -130,6 +130,7 @@ pub fn device(kind: &str, overrides: &[(&str, f64)]) -> Option<Device> {
         modulates: None,
         plugin: None,
         state: None,
+        pad_chains: Vec::new(),
     })
 }
 
@@ -159,7 +160,10 @@ mod tests {
         let open_hat_choke = rack.params.iter().find(|p| p.id == "p46.choke").unwrap();
         assert_eq!(open_hat_choke.value, 1.0);
         assert_eq!(open_hat_choke.group.as_deref(), Some("pad:46"));
-        assert_eq!(rack.params.iter().filter(|p| p.group.as_deref() == Some("pad:36")).count(), 5);
+        assert_eq!(rack.params.iter().filter(|p| p.group.as_deref() == Some("pad:36")).count(), 7);
+        // Four pages of 16, to note 99.
+        assert!(rack.params.iter().any(|p| p.id == "p99.sendB"));
+        assert!(!rack.params.iter().any(|p| p.id.starts_with("p100.")));
     }
 
     #[test]

@@ -14,6 +14,7 @@ import { ParamControl, ParamGroups, panelParams, paramOf, type Mapping, type Own
 import { Icon } from "./Icon";
 import { Popover } from "./Menu";
 import { PluginBody } from "./PluginPanel";
+import { SavePreset } from "./LibraryPanel";
 import { trackColor, trackVar } from "./trackColor";
 
 /** Where the sampler's slices start (fractions of the sample), as the engine cuts them: equal pieces of start–end, or the transients inside it. */
@@ -128,18 +129,23 @@ function SampleSlot({ track, device }: { track: Owner; device: Device }) {
   );
 }
 
-const PAD_ROWS = [
-  [48, 49, 50, 51],
-  [44, 45, 46, 47],
-  [40, 41, 42, 43],
-  [36, 37, 38, 39],
-];
+/** Four pages of 16 pads: the kit, its percussion, and empty pads for your samples. */
+const PAGES = ["Kit", "Perc", "Perc 2", "More"];
 
-/** Sixteen pads (the bottom-left one is C1, the kick): click to hear one, drop a sample on it to replace its sound. */
+/** A page's pads as they sit on a 4×4 grid: its first pad bottom left. */
+function padRows(page: number): number[][] {
+  const first = 36 + page * 16;
+  return [12, 8, 4, 0].map((row) => [0, 1, 2, 3].map((col) => first + row + col));
+}
+
+/** 64 pads in four pages (the bottom-left one of the first is C1, the kick): click to hear one, drop a sample on it to replace its sound. */
 function DrumPads({ track, device }: { track: Owner; device: Device }) {
   const [pad, setPad] = useState(36);
+  const [page, setPage] = useState(0);
   const assets = useStore((s) => s.project.assets);
-  const { loadSample, clearSample } = useStore.getState();
+  const { loadSample, clearSample, selectChain } = useStore.getState();
+  const effectsOf = (key: string) => device.padChains?.find((c) => c.key === key)?.devices.length ?? 0;
+  const pageUsed = (p: number) => Array.from({ length: 16 }, (_, i) => 36 + p * 16 + i).some((n) => sampleOf(n) || effectsOf(String(n)));
   const sampleOf = (note: number) => device.samples?.find((x) => x.key === note);
   const nameOf = (note: number) => {
     const ref = sampleOf(note);
@@ -152,12 +158,28 @@ function DrumPads({ track, device }: { track: Owner; device: Device }) {
   const padParams = device.params.filter((p) => p.group === `pad:${pad}`);
   return (
     <div className="drum-rack">
-      <div className="pads" role="group" aria-label="Pads">
-        {PAD_ROWS.flat().map((note) => (
+      <div className="pad-side">
+      <div className="seg pad-pages" role="tablist" aria-label="Pad pages">
+        {PAGES.map((label, p) => (
+          <button
+            key={label}
+            type="button"
+            role="tab"
+            aria-selected={page === p}
+            className={pageUsed(p) ? "used" : undefined}
+            title={`Pads ${noteName(36 + p * 16)}–${noteName(51 + p * 16)}`}
+            onClick={() => setPage(p)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="pads" role="group" aria-label={`Pads, page ${PAGES[page]}`}>
+        {padRows(page).flat().map((note) => (
           <button
             key={note}
             type="button"
-            className={`pad${note === pad ? " on" : ""}${sampleOf(note) ? " has-sample" : ""}`}
+            className={`pad${note === pad ? " on" : ""}${sampleOf(note) ? " has-sample" : ""}${effectsOf(String(note)) ? " has-fx" : ""}${!sampleOf(note) && padName(note).startsWith("Pad ") ? " empty-pad" : ""}`}
             data-sample-target={`${track.id}|${device.id}|${note}`}
             aria-pressed={note === pad}
             title={`${noteName(note)} · ${nameOf(note)} · drop an audio file to replace it`}
@@ -169,12 +191,32 @@ function DrumPads({ track, device }: { track: Owner; device: Device }) {
           </button>
         ))}
       </div>
+      </div>
       <div className="pad-edit">
         <div className="pad-head">
           <b>{nameOf(pad)}</b>
           <span className="muted">
-            {noteName(pad)} · {sampleOf(pad) ? "sample" : "built-in"}
+            {noteName(pad)} · {sampleOf(pad) ? "sample" : padName(pad).startsWith("Pad ") ? "empty" : "built-in"}
           </span>
+        </div>
+        <div className="pad-chains" role="group" aria-label="Effects">
+          {[
+            [String(pad), "Pad effects"],
+            ["A", "Return A"],
+            ["B", "Return B"],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              className="btn xs"
+              title={key === "A" || key === "B" ? `The effects every pad's Send ${key} goes through` : `Effects on ${nameOf(pad)} only`}
+              onClick={() => selectChain(`${track.id}/${device.id}/${key}`)}
+            >
+              {label}
+              {effectsOf(key) > 0 && <span className="count">{effectsOf(key)}</span>}
+              <Icon name="chevronRight" size={12} />
+            </button>
+          ))}
         </div>
         <div className="pad-actions">
           <button className="btn xs" type="button" onClick={() => void loadSample(track.id, device.id, pad)}>
@@ -342,6 +384,9 @@ const REDUCING = new Set(["comp", "gate", "limiter", "glue", "deesser"]);
 
 function DeviceCard({ track, device }: { track: Owner; device: Device }) {
   const { toggleDevice, removeDevice } = useStore.getState();
+  const [presetAnchor, setPresetAnchor] = useState<HTMLElement | null>(null);
+  // Effects inside a Drum Rack have no meters of their own.
+  const nested = track.id.includes("/");
   const params = panelParams(device);
   const live = LIVE_TYPES.has(device.type);
   return (
@@ -356,7 +401,7 @@ function DeviceCard({ track, device }: { track: Owner; device: Device }) {
           onClick={() => toggleDevice(track.id, device.id)}
         />
         <span className="dev-name">{device.name}</span>
-        {REDUCING.has(device.type) && device.on && <ReductionMeter id={device.id} />}
+        {REDUCING.has(device.type) && device.on && !nested && <ReductionMeter id={device.id} />}
         {device.role === "instrument" && <span className="tag">Instrument</span>}
         {device.type === "plugin" ? (
           <span className="tag tip-b" data-tip={device.plugin?.path ?? ""}>
@@ -367,9 +412,21 @@ function DeviceCard({ track, device }: { track: Owner; device: Device }) {
             Not yet audible
           </span>
         )}
+        {device.type !== "plugin" && (
+          <button
+            className="ib xs tip-b"
+            type="button"
+            data-tip="Save as a preset"
+            aria-label={`Save ${device.name} as a preset`}
+            onClick={(e) => setPresetAnchor(presetAnchor ? null : e.currentTarget)}
+          >
+            <Icon name="book" size={13} />
+          </button>
+        )}
         <button className="ib xs" type="button" aria-label={`Remove ${device.name}`} onClick={() => removeDevice(track.id, device.id)}>
           <Icon name="close" size={14} />
         </button>
+        {presetAnchor && <SavePreset owner={track.id} deviceId={device.id} name={device.name} anchor={presetAnchor} onClose={() => setPresetAnchor(null)} />}
       </header>
       {device.type === "plugin" ? (
         <PluginBody track={track} device={device} />
@@ -496,7 +553,7 @@ function InputPicker({ track }: { track: Track }) {
   );
 }
 
-const HOST_KINDS = { midi: "MIDI track", audio: "Audio track", group: "Group track", return: "Return track", master: "Master" } as const;
+const HOST_KINDS = { midi: "MIDI track", audio: "Audio track", group: "Group track", return: "Return track", master: "Master", pad: "Drum Rack" } as const;
 
 /** What a modulator moves: a parameter of another device on its track. */
 function ModTargetPicker({ track, device }: { track: Owner; device: Device }) {
@@ -547,7 +604,9 @@ function ModTargetPicker({ track, device }: { track: Owner; device: Device }) {
 export function DeviceChain() {
   const project = useStore((s) => s.project);
   const owner = useStore((s) => s.chainOwner ?? s.selectedTrackId);
-  const host = useMemo(() => chainHost(project, owner), [project, owner]);
+  // A drum pad's chain whose rack has gone shows its track again.
+  const host = useMemo(() => chainHost(project, owner) ?? chainHost(project, owner?.split("/")[0] ?? null), [project, owner]);
+  const selectChain = useStore((s) => s.selectChain);
   const audioTrack = host?.kind === "audio" ? project.tracks.find((t) => t.id === host.id) : undefined;
   const frozen = project.tracks.find((t) => t.id === host?.id)?.frozen !== undefined;
   const addDevice = useStore((s) => s.addDevice);
@@ -581,6 +640,12 @@ export function DeviceChain() {
       onDrop={onDrop}
     >
       <div className="detail-head">
+        {host.kind === "pad" && (
+          <button className="btn sm" type="button" onClick={() => selectChain(null)}>
+            <Icon name="chevronRight" size={13} className="flip" />
+            Back to the Drum Rack
+          </button>
+        )}
         <span className="tdot" style={{ background: host.color ? trackVar(host.color) : "var(--text-3)" }} />
         <h2 className="pt">{host.name}</h2>
         <span className="muted">
@@ -601,7 +666,14 @@ export function DeviceChain() {
           Drag a knob up or down to turn it. Double-click resets it.
         </span>
       </div>
-      <div className={`chain${frozen ? " resting" : ""}`}>
+      <div className={`chain${frozen ? " resting" : ""}`} data-chain-owner={host.id}>
+        {host.kind === "pad" && host.devices.length === 0 && (
+          <p className="muted pad-chain-empty">
+            {host.id.endsWith("/A") || host.id.endsWith("/B")
+              ? "Every pad's send goes through these effects. Add a reverb or a delay, then turn up a pad's send."
+              : "Effects here change this pad only. Add one from the browser or with Add device."}
+          </p>
+        )}
         {host.devices.map((d, i) => (
           <div key={d.id} className="chain-item">
             {i > 0 && <Icon name="chevronRight" size={14} className="chain-arrow" />}

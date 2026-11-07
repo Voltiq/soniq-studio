@@ -4,6 +4,7 @@
 
 mod analysis;
 mod decode;
+mod describe;
 mod dsp;
 mod edit;
 mod effects;
@@ -21,6 +22,7 @@ mod tempo;
 mod wav;
 
 pub use analysis::{Analyzer, Reading, SPECTRUM_BANDS, SPECTRUM_FLOOR, SpectrumMeter};
+pub use describe::{KeyGuess, NOTE_NAMES, SampleInfo, SampleKind, describe, detect_key, name_bpm, name_key, name_tags};
 pub use measure::{SpectrumPlot, find_clipping, label_sounds, plot_spectrum, rms_db};
 pub use decode::decode_file;
 pub use edit::{EditOp, apply_edit, delete_range, extract, insert, snap_to_zero_crossing};
@@ -32,6 +34,7 @@ pub use onsets::onsets;
 pub use peaks::{PEAK_STEP, peaks};
 pub use repair::{Diagnosis, FixKind, FixStep, LONG_PAUSE, REPAIR_MAX, diagnose, fix_plan, repair};
 pub use resample::resample;
+pub use stretch::{change_pitch, time_stretch};
 pub use spectral::{FFT_SIZE, FrequencyScale, NoiseProfile, noise_profile, spectral_gain, spectrogram};
 pub use tempo::detect_tempo;
 pub use wav::write_wav;

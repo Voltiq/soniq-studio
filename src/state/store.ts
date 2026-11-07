@@ -42,6 +42,8 @@ import {
   type ChaptersFile,
   type FadeCurve,
   type MarkKind,
+  type LibraryEntry,
+  type LibraryView,
   type TrackRole,
   type BatchOutput,
   type BatchProgress,
@@ -256,6 +258,12 @@ export interface Store {
   /** The plugins found on disk (null until first asked for). */
   pluginList: PluginList | null;
   scanningPlugins: boolean;
+  /** The browser's library of samples and presets (desktop app). */
+  library: LibraryView | null;
+  /** The library sample being heard. */
+  auditioning: string | null;
+  /** Hear samples in time with the song (tempo and key). */
+  auditionSync: boolean;
   paletteOpen: boolean;
   settingsOpen: boolean;
   exportOpen: boolean;
@@ -425,6 +433,22 @@ export interface Store {
   setPluginFolders(folders: string[]): Promise<void>;
   /** Asks for a folder and looks for plugins in it too. */
   addPluginFolder(): Promise<void>;
+  loadLibrary(): Promise<void>;
+  addLibraryFolder(): Promise<void>;
+  removeLibraryFolder(path: string): Promise<void>;
+  rescanLibrary(): Promise<void>;
+  toggleFavourite(path: string): Promise<void>;
+  setLibraryTags(path: string, tags: string[]): Promise<void>;
+  setAuditionSync(on: boolean): void;
+  /** Plays a library sample (again: stops it). */
+  audition(path: string): Promise<void>;
+  stopAudition(): void;
+  /** A library file went into the song: it goes to the top of Recent. */
+  libraryUsed(path: string): void;
+  /** Double-click in the library: a sample to the song, a preset to the chain on show. */
+  addLibraryItem(entry: LibraryEntry, owner?: string): Promise<void>;
+  addPreset(owner: string, path: string): Promise<void>;
+  saveDevicePreset(owner: string, device: string, name: string): Promise<void>;
   /** Adds a plugin to a chain: a track, a return, or the master. */
   addPlugin(owner: string, plugin: PluginEntry): Promise<void>;
   pluginWindow(device: string, show: boolean): Promise<void>;
@@ -661,6 +685,19 @@ const EMPTY_PROJECT: Project = {
 
 const PROJECT_FILTER = [{ name: "Soniq project", extensions: ["soniq"] }];
 
+const AUDITION_SYNC_KEY = "soniq.auditionSync";
+let libraryPoll = 0;
+let auditionTimer = 0;
+
+/** Whether samples are heard in time with the song (on unless switched off). */
+function loadAuditionSync(): boolean {
+  try {
+    return localStorage.getItem(AUDITION_SYNC_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 export const useStore = create<Store>((set, get) => {
   const pushToast = (toast: Omit<Toast, "id">) => {
     const id = toastId++;
@@ -787,6 +824,9 @@ export const useStore = create<Store>((set, get) => {
     pluginStatus: {},
     pluginLatencyMs: 0,
     pluginList: null,
+    library: null,
+    auditioning: null,
+    auditionSync: loadAuditionSync(),
     scanningPlugins: false,
     paletteOpen: false,
     settingsOpen: false,
@@ -1591,6 +1631,10 @@ export const useStore = create<Store>((set, get) => {
       const host = chainHost(s.project, owner);
       const spec = deviceSpec(type);
       if (!host || !spec) return;
+      if (host.kind === "pad" && spec.category !== "audio-fx") {
+        pushToast({ tone: "info", title: `${spec.name} goes on a track`, detail: "Drum pads and their returns take audio effects." });
+        return;
+      }
       if (spec.category === "modulator") {
         if (host.kind === "return" || host.kind === "master") {
           pushToast({ tone: "info", title: `${spec.name} goes on a track`, detail: "Modulators move a knob of another device on the same track." });
@@ -1601,8 +1645,9 @@ export const useStore = create<Store>((set, get) => {
         pushToast({ tone: "info", title: `${spec.name} needs a MIDI track`, detail: `${what}; pick a MIDI track or add one from the Track menu.` });
         return;
       }
+      const before = s.project;
       void s.run({ op: "addDevice", track: owner, device: createDevice(type) }).then(() => {
-        pushToast({ tone: "success", title: `Added ${spec.name} to ${host.name}` });
+        if (get().project !== before) pushToast({ tone: "success", title: `Added ${spec.name} to ${host.name}` });
       });
     },
 
@@ -1636,6 +1681,142 @@ export const useStore = create<Store>((set, get) => {
       }
     },
 
+    loadLibrary: async () => {
+      const view = await backend.libraryGet().catch(() => null);
+      if (!view) return;
+      set({ library: view });
+      // While indexing, look again now and then.
+      window.clearTimeout(libraryPoll);
+      if (view.scanning) libraryPoll = window.setTimeout(() => void get().loadLibrary(), 700);
+    },
+
+    addLibraryFolder: async () => {
+      if (!inTauri) return;
+      const picked = await openDialog({ directory: true, title: "A folder of samples or presets" });
+      if (typeof picked !== "string") return;
+      try {
+        set({ library: await backend.libraryAddFolder(picked) });
+        void get().loadLibrary();
+      } catch (err) {
+        fail("Could not add the folder")(err);
+      }
+    },
+
+    removeLibraryFolder: async (path) => set({ library: await backend.libraryRemoveFolder(path) }),
+
+    rescanLibrary: async () => {
+      set({ library: await backend.libraryRescan() });
+      void get().loadLibrary();
+    },
+
+    toggleFavourite: async (path) => {
+      const lib = get().library;
+      if (!lib) return;
+      const on = !lib.favourites.includes(path);
+      set({ library: { ...lib, favourites: on ? [...lib.favourites, path] : lib.favourites.filter((p) => p !== path) } });
+      await backend.libraryFavourite(path, on).catch(fail("Could not change the favourites"));
+    },
+
+    setLibraryTags: async (path, tags) => {
+      const clean = await backend.libraryTags(path, tags).catch(() => null);
+      const lib = get().library;
+      if (!clean || !lib) return;
+      const all = { ...lib.tags };
+      if (clean.length) all[path] = clean;
+      else delete all[path];
+      set({ library: { ...lib, tags: all } });
+    },
+
+    setAuditionSync: (on) => {
+      set({ auditionSync: on });
+      try {
+        localStorage.setItem(AUDITION_SYNC_KEY, on ? "1" : "0");
+      } catch {
+        // Remembered for this session only.
+      }
+      const playing = get().auditioning;
+      if (playing) {
+        set({ auditioning: null });
+        void get().audition(playing);
+      }
+    },
+
+    audition: async (path) => {
+      window.clearTimeout(auditionTimer);
+      if (get().auditioning === path) return get().stopAudition();
+      try {
+        const heard = await backend.libraryAudition(path, get().auditionSync);
+        set({ auditioning: path });
+        // A one-shot ends by itself (after waiting at most a beat or so for the grid).
+        if (!heard.looping) auditionTimer = window.setTimeout(() => get().auditioning === path && set({ auditioning: null }), (heard.seconds + 2) * 1000);
+      } catch (err) {
+        set({ auditioning: null });
+        fail("Could not play the sample")(err);
+      }
+    },
+
+    stopAudition: () => {
+      window.clearTimeout(auditionTimer);
+      set({ auditioning: null });
+      void backend.libraryStop().catch(() => {});
+    },
+
+    libraryUsed: (path) => {
+      void backend.libraryUsed(path).catch(() => {});
+      const lib = get().library;
+      if (lib) set({ library: { ...lib, recent: [path, ...lib.recent.filter((p) => p !== path)].slice(0, 40) } });
+    },
+
+    addLibraryItem: async (entry, owner) => {
+      if (entry.kind === "preset") {
+        if (!owner) {
+          pushToast({ tone: "info", title: "Select a track first", detail: "The preset goes on the device chain on show." });
+          return;
+        }
+        return get().addPreset(owner, entry.path);
+      }
+      if (entry.error) return;
+      await get().importAudio([entry.path]);
+      get().libraryUsed(entry.path);
+    },
+
+    addPreset: async (owner, path) => {
+      const s = get();
+      const host = chainHost(s.project, owner);
+      if (!host) return;
+      let device;
+      try {
+        device = await backend.presetLoad(path);
+      } catch (err) {
+        return fail("Could not open the preset")(err);
+      }
+      if (host.kind === "pad" && device.role !== "effect") {
+        pushToast({ tone: "info", title: `${device.name} goes on a track`, detail: "Drum pads take audio effects." });
+        return;
+      }
+      if (device.role === "instrument" && host.kind !== "midi") {
+        pushToast({ tone: "info", title: `${device.name} needs a MIDI track`, detail: "Instruments play notes; pick a MIDI track or add one from the Track menu." });
+        return;
+      }
+      const name = path.split(/[\\/]/).pop()?.replace(/\.soniqpreset$/i, "") ?? device.name;
+      const before = get().project;
+      await s.run({ op: "addDevice", track: owner, device });
+      if (get().project !== before) {
+        pushToast({ tone: "success", title: `Added ${name} to ${host.name}` });
+        get().libraryUsed(path);
+      }
+    },
+
+    saveDevicePreset: async (owner, device, name) => {
+      try {
+        const path = await backend.presetSave(owner, device, name);
+        pushToast({ tone: "success", title: `Saved preset ${name}`, detail: path });
+        void get().loadLibrary();
+      } catch (err) {
+        fail("Could not save the preset")(err);
+      }
+    },
+
     addPluginFolder: async () => {
       const picked = await openDialog({ directory: true, title: "A folder with CLAP plugins" });
       if (typeof picked !== "string") return;
@@ -1646,6 +1827,10 @@ export const useStore = create<Store>((set, get) => {
     addPlugin: async (owner, plugin) => {
       const host = chainHost(get().project, owner);
       if (!host) return;
+      if (host.kind === "pad") {
+        pushToast({ tone: "info", title: `${plugin.name} goes on a track`, detail: "Drum pads take the built-in audio effects." });
+        return;
+      }
       if (plugin.instrument && host.kind !== "midi") {
         pushToast({ tone: "info", title: `${plugin.name} needs a MIDI track`, detail: "Instruments play notes; pick a MIDI track or add one from the Track menu." });
         return;
