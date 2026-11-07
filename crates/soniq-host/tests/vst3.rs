@@ -94,6 +94,16 @@ fn state_carries_over_to_a_new_instance() {
     let mut fx = first.processor(&[("0".into(), 0)], false, true);
     fx.configure(&bank(&[("0", gain(-12.0))]));
     block(&mut fx, 64);
+    // The change reaches the plugin's controller asynchronously (it failed on a
+    // slow CI runner): save once the first instance reports it.
+    for _ in 0..100 {
+        if first.texts(&[0]).unwrap()[0].2 == "-12.0 dB" {
+            break;
+        }
+        block(&mut fx, 64);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(first.texts(&[0]).unwrap()[0].2, "-12.0 dB", "the first instance never took the change");
     let state = first.save_state().unwrap();
     let (second, _) = spawn("Soniq Test Delay");
     second.load_state(&state).unwrap();
