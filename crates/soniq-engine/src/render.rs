@@ -1457,6 +1457,31 @@ mod tests {
     }
 
     #[test]
+    fn a_linear_phase_eq_is_made_up_for_like_a_plugin() {
+        // A flat EQ in linear-phase mode on one of two tracks with the same click.
+        let mut slow = click_track(1);
+        slow.fx.push(fx("eq", "eq", &[("phase", 1.0)]));
+        let late = slow.fx[0].fx.latency() as usize;
+        assert_eq!(late, 1024 + 4096);
+        let mut graph = Graph::new(vec![slow, click_track(2)], 1.0);
+        graph.compensate();
+        assert_eq!(graph.latency as usize, late);
+        let (mut r, t) = setup(graph);
+        r.prime();
+        t.set_playing(true);
+        let mut out = Vec::new();
+        for _ in 0..12 {
+            r.render_block(512);
+            out.extend_from_slice(r.output(512).0);
+        }
+        // Both clicks together, as late as the EQ: one hit, twice as loud, nothing smeared around it.
+        let at = (0..out.len()).max_by(|a, b| out[*a].abs().total_cmp(&out[*b].abs())).unwrap();
+        assert_eq!(at, 100 + late);
+        assert!((out[at] - 2.0).abs() < 1e-3, "{}", out[at]);
+        assert!(out.iter().enumerate().all(|(i, s)| i == at || s.abs() < 1e-3));
+    }
+
+    #[test]
     fn a_slow_return_holds_the_dry_mix_back_with_it() {
         let mut track = click_track(1);
         track.sends = vec![1.0];

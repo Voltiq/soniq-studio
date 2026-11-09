@@ -185,11 +185,12 @@ impl AudioFx {
         }
     }
 
-    /// Samples its output comes late by (only plugins report any; the
-    /// convolution reverb's late wet sound is part of its sound).
+    /// Samples its output comes late by (plugins, and the EQ in linear-phase
+    /// mode; the convolution reverb's late wet sound is part of its sound).
     pub fn latency(&self) -> u32 {
         match self {
             Self::External(fx) => fx.latency(),
+            Self::Eq(fx) => fx.latency(),
             _ => 0,
         }
     }

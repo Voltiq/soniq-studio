@@ -101,7 +101,12 @@ fn pad_chains(device: &Device, rate: u32) -> PadChains {
             .devices
             .iter()
             .filter(|d| d.on && d.role == DeviceRole::Effect && d.kind != PLUGIN_TYPE)
-            .filter_map(|d| Some(PadFx { id: d.id.clone(), fx: AudioFx::build(&d.kind, rate, &bank(d))? }))
+            .filter_map(|d| {
+                // Nothing inside the rack makes up for a delay: the EQ stays minimum phase here.
+                let bank = bank(d);
+                let params = |id: &str| if id == "phase" { Some(0.0) } else { bank.get(id) };
+                Some(PadFx { id: d.id.clone(), fx: AudioFx::build(&d.kind, rate, &params)? })
+            })
             .collect();
         match chain.key.as_str() {
             "A" => chains.returns[0] = fx,

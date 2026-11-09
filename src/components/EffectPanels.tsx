@@ -221,7 +221,36 @@ export function EqEditor({ track, device }: { track: Owner; device: Device }) {
           .map((p) => (
             <ParamControl key={p.id} track={track} device={device} param={p} size={30} />
           ))}
+        <EqPhase track={track} device={device} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Minimum phase (no delay) or linear phase (no frequency shifted in time, at
+ * the price of a fixed delay the engine makes up for). Not inside a Drum
+ * Rack, where nothing can make up for a delay.
+ */
+function EqPhase({ track, device }: { track: Owner; device: Device }) {
+  const rate = useStore((s) => s.engineStatus?.sampleRate ?? 48_000);
+  const p = device.params.find((x) => x.id === "phase");
+  if (!p || track.id.includes("/")) return null;
+  const linear = Math.round(p.value) === 1;
+  // Mirrors `Linear::latency`: one block and half the filter.
+  const taps = rate <= 50_000 ? 8192 : rate <= 100_000 ? 16_384 : 32_768;
+  const ms = Math.round(((taps / 8 + taps / 2) / rate) * 1000);
+  return (
+    <div
+      className="eq-phase tip-t"
+      data-tip={
+        linear
+          ? `Linear phase: the curve without shifting any frequency in time. ${ms} ms late; the other tracks wait for it, but playing live through it feels late.`
+          : "Minimum phase: no delay. Linear keeps every frequency in time (for mastering and parallel tracks) at the price of a delay."
+      }
+    >
+      <ParamControl track={track} device={device} param={p} size={30} />
+      {linear && <span className="eq-late mono">{ms} ms</span>}
     </div>
   );
 }

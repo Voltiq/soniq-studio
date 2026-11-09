@@ -260,7 +260,7 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 - [x] **P0** Device chain UI with on/off switch, knobs, add from the browser and remove (UI)
 - [x] **P0** EQ (8 bands: cuts at 24 dB/oct, shelves, bells, notches; a curve editor), compressor (soft knee, dry/wet, sidechain), gate (hold, range, sidechain), limiter (no look-ahead, so no latency), reverb (algorithmic, with pre-delay and damping), delay (free or synced, ping-pong, filtered feedback), chorus, flanger and phaser, saturator (soft, hard, tube), utility (gain, pan, width, mono, phase), and an auto filter
 - [x] **P0** A live spectrum in the EQ, gain-reduction meters on the compressor, gate, glue, limiter and de-esser (Phase 7 Part C)
-- [ ] **P0** Effects still to come: linear-phase EQ
+- [x] **P0** Linear-phase mode in the EQ (Phase: Minimum or Linear; Phase 8 Part A)
 - [x] **P1** Glue (bus) compressor (fixed ratios and attacks, auto release, range, clip), three-band multiband dynamics (Linkwitz-Riley crossovers that sum flat), de-esser (turns down the highs only or the whole signal; listen to what it hears), transient shaper, auto-pan (free or synced, three shapes, phase), redux (bit depth and sample-rate reduction), convolution reverb (five synthetic spaces, FFT convolution), pitch shifter (±24 semitones, two crossfading taps) and a vocoder (8–24 bands, formant shift; noise, saw or another track as the carrier); auto-filter came in phase 4A
 - [ ] **P1** Effects still to come: convolution with your own impulse responses, a fourth multiband band and per-band solo
 - [ ] **P1** Audio effect racks (parallel chains, macros), dry/wet on every device
@@ -564,6 +564,31 @@ Every P0 item the earlier phases left open, so nothing a first-time user leans o
 - [x] Each pad can have its own audio effects, and Send A and Send B (off at −60 dB) into the rack's two returns, which have effects too ("Pad effects", "Return A", "Return B" open the chain in the devices panel, with a way back). Sends are taken after the pad's effects; effects ring out for 8 s after the last hit and keep their state when the song changes. Pads without effects or sends cost nothing extra
 - [x] Rust tests (253 in total) now also cover name tags, tempos and keys, a pitched one-shot's root, noise left keyless, a chord loop's key, moving keys the short way, a click loop's tempo, every built-in pad's level, empty pads, a pad's effects touching only it, sends through a return, a reverb ringing past the hit, pad chains in the song (only audio effects, knobs and switches, undo), and an audition looping from the next beat
 - [ ] Not tried yet: hearing an audition, which needs sound. Effects inside the rack have no meters, live spectrum or automation lanes yet. Checked in the desktop app (silent): a test folder indexed (kick: one-shot tagged drums and kick; a click loop at 120 BPM; a pad named in A minor); favourites, your own tags and Recent; the kick dragged onto a pad and a loop onto Audio 1 at beat 4; the Perc page's pads and the empty More page; a compressor on one pad (a synth refused), a reverb on Return A and the pad's Send A at −6 dB; the kit saved as a preset and added to another track with its pad effects and fresh ids
+
+### Phase 8 — Depth
+Every P0 is done after Part A. The rest of this phase takes the P1 items people reach for first, a part at a time.
+
+**Part A ✅ — the last P0 and loose ends** (§5.8, §5.9)
+- [x] Linear-phase EQ: the Equalizer's new Phase choice (Minimum or Linear). Linear applies the same eight-band curve without shifting any frequency in time: the bands' combined level at every frequency becomes a symmetric filter (8192 taps at 44.1 and 48 kHz, more at higher rates; Blackman window), run by overlap-save FFT every 1024 samples, all of it allocated when built. It is 5120 samples late at 48 kHz (107 ms, shown under the choice); the engine makes up for it like a plugin's delay on tracks, returns and the master, and exports cut it off. Turning a knob remakes the filter at the next block and keeps the sound in flight. Inside a Drum Rack the EQ stays minimum phase (nothing there can make up for a delay)
+- [x] The devices panel folds to its header (the arrow at its left, remembered); in the Mixer it starts folded, so every strip shows its faders in full. Dropping a device on the folded header opens it
+- [x] Rust tests (256 in total) now also cover the linear EQ's curve (a bell at +12 dB, a low cut at −3 dB on its corner and under −40 dB two octaves down), an impulse coming out symmetric about the reported delay, a rebuild keeping the sound in flight, and two tracks with the same click landing on one sample when one has the linear EQ
+- [ ] Not tried yet: listening. Checked in the desktop app (silent): Phase set to Linear on an EQ shows 107 ms; the Mixer opens with the devices folded and no strip cut off; the arrangement keeps its devices open
+
+**Part B — takes** (§5.2, §5.4)
+- [ ] Loop recording into take lanes, and comping: swipe across takes to choose what plays
+- [ ] Record into empty session slots; capture a playing scene into the arrangement
+
+**Part C — clips and the arrangement** (§5.3)
+- [ ] Clip gain envelopes, reverse, clip-level pitch and stretch
+- [ ] Time-signature changes; arrangement sections (intro, verse, chorus) that move as blocks
+
+**Part D — sound design** (§5.7, §5.8)
+- [ ] A wavetable synth with a modulation matrix
+- [ ] Audio effect racks (parallel chains, macros) and dry/wet on every device; convolution with your own impulse responses
+
+**Part E — the project** (§5.15, §5.16)
+- [ ] Project versions (snapshots) with notes, to compare and restore; a shareable `.soniqz` bundle
+- [ ] Cover art and gapless MP3
 
 ---
 

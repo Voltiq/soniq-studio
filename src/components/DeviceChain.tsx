@@ -597,6 +597,18 @@ function ModTargetPicker({ track, device }: { track: Owner; device: Device }) {
   );
 }
 
+const FOLD_KEY = "soniq.devicesFolded";
+
+/** Whether the devices panel is folded, in the Mixer and elsewhere. */
+function readFolded(): { mixer: boolean; other: boolean } {
+  try {
+    const saved = JSON.parse(localStorage.getItem(FOLD_KEY) ?? "null") as { mixer?: unknown; other?: unknown } | null;
+    return { mixer: saved?.mixer !== false, other: saved?.other === true };
+  } catch {
+    return { mixer: true, other: false };
+  }
+}
+
 /** The selected track's devices, or a return's or the master's (picked in the mixer). */
 export function DeviceChain() {
   const project = useStore((s) => s.project);
@@ -604,6 +616,19 @@ export function DeviceChain() {
   // A drum pad's chain whose rack has gone shows its track again.
   const host = useMemo(() => chainHost(project, owner) ?? chainHost(project, owner?.split("/")[0] ?? null), [project, owner]);
   const selectChain = useStore((s) => s.selectChain);
+  // Folded to its header, the views above get the room: the Mixer starts that way, for its faders.
+  const where = useStore((s) => (s.view === "mixer" ? "mixer" : "other"));
+  const [folded, setFolded] = useState(() => readFolded());
+  const collapsed = folded[where];
+  const fold = (on: boolean) => {
+    const next = { ...folded, [where]: on };
+    setFolded(next);
+    try {
+      localStorage.setItem(FOLD_KEY, JSON.stringify(next));
+    } catch {
+      // Remembered for this session only.
+    }
+  };
   const audioTrack = host?.kind === "audio" ? project.tracks.find((t) => t.id === host.id) : undefined;
   const frozen = project.tracks.find((t) => t.id === host?.id)?.frozen !== undefined;
   const addDevice = useStore((s) => s.addDevice);
@@ -620,12 +645,15 @@ export function DeviceChain() {
   const onDrop = (e: DragEvent) => {
     setDropping(false);
     const type = e.dataTransfer.getData(DEVICE_DRAG_TYPE);
-    if (type) addDevice(host.id, type);
+    if (type) {
+      addDevice(host.id, type);
+      if (collapsed) fold(false);
+    }
   };
 
   return (
     <section
-      className={`detail${tall ? " tall" : ""}${dropping ? " dropping" : ""}`}
+      className={`detail${tall ? " tall" : ""}${dropping ? " dropping" : ""}${collapsed ? " collapsed" : ""}`}
       aria-label={`Device chain for ${host.name}`}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes(DEVICE_DRAG_TYPE)) {
@@ -637,6 +665,16 @@ export function DeviceChain() {
       onDrop={onDrop}
     >
       <div className="detail-head">
+        <button
+          className="ib xs tip-t detail-fold"
+          type="button"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Show the devices" : "Hide the devices"}
+          data-tip={collapsed ? "Show the devices" : "Hide the devices: more room above"}
+          onClick={() => fold(!collapsed)}
+        >
+          <Icon name={collapsed ? "chevronUp" : "chevronDown"} size={14} />
+        </button>
         {host.kind === "pad" && (
           <button className="btn sm" type="button" onClick={() => selectChain(null)}>
             <Icon name="chevronRight" size={13} className="flip" />
@@ -663,7 +701,7 @@ export function DeviceChain() {
           Drag a knob up or down to turn it. Double-click resets it.
         </span>
       </div>
-      <div className={`chain${frozen ? " resting" : ""}`} data-chain-owner={host.id}>
+      <div className={`chain${frozen ? " resting" : ""}`} data-chain-owner={host.id} hidden={collapsed}>
         {host.kind === "pad" && host.devices.length === 0 && (
           <p className="muted pad-chain-empty">
             {host.id.endsWith("/A") || host.id.endsWith("/B")

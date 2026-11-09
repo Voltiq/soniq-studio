@@ -62,6 +62,9 @@ Releases are built by GitHub Actions from a version tag: see [RELEASING.md](RELE
   or gate can listen to another track (Sidechain), so the bass ducks under the kick; a vocoder can speak
   through another track (Carrier track, with Carrier set to "Sidechain track"). In the mixer, click a
   return's or the master's name to open its chain.
+- **Linear-phase EQ.** The Equalizer's Phase choice switches to a linear-phase filter: the same curve
+  with no frequency shifted in time, for mastering and parallel tracks. Its delay (107 ms at 48 kHz) is
+  made up for on every other track and cut from exports.
 - **Library.** Browser › Library indexes your sample and preset folders: loop or one-shot, tempo, key
   and tags from the names; search, favourites, your own tags and recent items. Click to hear a sample in
   time with the song (stretched to its tempo, moved to its key), drag it onto a track or a pad. Any

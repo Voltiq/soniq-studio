@@ -7815,3 +7815,32 @@ button.select.sbox[aria-expanded="true"] .i.sbox-chev {
   animation-duration: 260ms;
   animation-timing-function: var(--ease);
 }
+
+/* ---------- Devices panel, folded; the EQ's phase ---------- */
+
+.detail.collapsed,
+.detail.tall.collapsed {
+  height: auto;
+  padding-bottom: 8px;
+}
+
+.detail .chain[hidden] {
+  display: none;
+}
+
+.detail-fold {
+  flex: none;
+  margin-right: -4px;
+}
+
+.eq-phase {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.eq-late {
+  font-size: 10px;
+  color: var(--warning);
+}
