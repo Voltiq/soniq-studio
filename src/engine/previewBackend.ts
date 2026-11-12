@@ -314,6 +314,16 @@ function reduce(p: Project, op: Op): { project: Project; label: string; created?
     case "duplicateClips":
     case "extractToTrack":
       throw new Error("Moving and copying several clips needs the desktop app (npm run tauri dev).");
+    case "reverseClips":
+    case "setClipTranspose":
+    case "setClipEnvelope":
+      throw new Error("Reversing, transposing and gain envelopes need the desktop app (npm run tauri dev).");
+    case "setMeter":
+      throw new Error("Time-signature changes need the desktop app (npm run tauri dev).");
+    case "moveSection":
+    case "duplicateSection":
+    case "deleteSection":
+      throw new Error("Moving sections needs the desktop app (npm run tauri dev).");
     case "compTake":
     case "deleteTake":
     case "clearTakes":

@@ -7944,3 +7944,125 @@ button.select.sbox[aria-expanded="true"] .i.sbox-chev {
 .slot.recording.stopping {
   opacity: 0.75;
 }
+
+/* ---------- Clip gain envelope ---------- */
+
+.clip-env {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.clip-env.editable {
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.clip-env svg {
+  display: block;
+  overflow: visible;
+}
+
+.clip-env-line {
+  fill: none;
+  stroke: var(--text-1);
+  stroke-width: 1.5;
+  opacity: 0.85;
+  vector-effect: non-scaling-stroke;
+}
+
+.clip-env.empty .clip-env-line {
+  stroke-dasharray: 4 4;
+  opacity: 0.45;
+}
+
+.clip-env-pt {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--text-1);
+  box-shadow: 0 0 0 1.5px var(--surface-1);
+  cursor: grab;
+}
+
+.clip-env-pt.on {
+  transform: scale(1.3);
+}
+
+.clip-env-read {
+  position: absolute;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 10px;
+  line-height: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.clip-pitch .num-input {
+  width: 54px;
+}
+
+/* ---------- Time-signature changes ---------- */
+
+/* Bars are not all one width: the lanes keep their beat lines, and the bar
+   lines are drawn behind them, one evenly spaced stretch per time signature. */
+.arr-inner.metered .lane {
+  background-image: linear-gradient(90deg, var(--grid-beat) 1px, transparent 1px);
+  background-size: var(--beat) 100%;
+}
+
+.arr-inner.metered .ruler {
+  background-image: none;
+}
+
+.arr-inner {
+  position: relative;
+}
+
+.meter-lines {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.meter-lines span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background-image: linear-gradient(90deg, var(--grid-bar) 1px, transparent 1px);
+}
+
+.meter-tag {
+  position: absolute;
+  top: 7px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font: 600 9.5px var(--mono);
+  line-height: 13px;
+  cursor: pointer;
+}
+
+.meter-anchor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  pointer-events: none;
+}
+
+/* ---------- Sections ---------- */
+
+.marker.region.moving-section {
+  outline: 1.5px dashed var(--accent);
+  outline-offset: 1px;
+}

@@ -3,8 +3,8 @@
 use serde::Deserialize;
 
 use crate::{
-    Asset, AutoPoint, AutoTarget, AutomationLane, Chain, ChainOwner, Clip, ClipContent, ControllerMapping, Device, DeviceParam, DeviceRole, FollowAction, History,
-    MAX_BPM, MIN_BPM, MODULATOR_TYPES, MappingTarget, Marker, Monitor, Note, PLUGIN_TYPE, ParamRef, Project, SIDECHAIN_TYPES, SampleRef, TakeLane, TempoMap, TempoPoint, Track,
+    Asset, AutoPoint, AutoTarget, AutomationLane, Chain, ChainOwner, Clip, ClipContent, ControllerMapping, Device, DeviceParam, DeviceRole, EnvPoint, FollowAction, History,
+    MAX_BPM, MIN_BPM, MODULATOR_TYPES, MappingTarget, Marker, MeterChange, Monitor, Note, PLUGIN_TYPE, ParamRef, Project, SIDECHAIN_TYPES, SampleRef, TakeLane, TempoMap, TempoPoint, Track,
     TrackKind, TrackRole, Warp, FadeCurve, find_device_mut,
 };
 
@@ -207,6 +207,25 @@ pub enum Op {
     /// Copies a timeline clip into a scene's slot on its track, replacing what is there.
     PutInSlot { clip: String, scene: usize },
     ClearSlot { track: String, scene: usize },
+    /// Plays audio clips backwards (or forwards again).
+    ReverseClips { clips: Vec<String> },
+    /// An audio clip's pitch in semitones; its length stays.
+    SetClipTranspose { clip: String, semitones: f64 },
+    /// An audio clip's gain over time: breakpoints in beats from its start, in dB.
+    SetClipEnvelope { clip: String, points: Vec<EnvPoint> },
+    /// A time signature from bar `bar` (0-based, 1 or later) on; `None` takes the change there away.
+    SetMeter {
+        bar: u32,
+        #[serde(default)]
+        beats_per_bar: Option<u32>,
+    },
+    /// Moves a region and everything in it (clips, automation, markers) so it
+    /// starts at `to` (beats): the gap it leaves closes, and the song opens up for it.
+    MoveSection { marker: String, to: f64 },
+    /// Inserts a copy of a region and everything in it right after it.
+    DuplicateSection { marker: String },
+    /// Removes a region and everything in it, and closes the gap.
+    DeleteSection { marker: String },
     /// Comping: puts a stretch (beats) of a take on the track's timeline, over what is there.
     CompTake { track: String, lane: String, start: f64, end: f64 },
     DeleteTake { track: String, lane: String },
@@ -316,6 +335,8 @@ fn coalesce_key(op: &Op) -> Option<String> {
         Op::SetTempo { .. } => Some("tempo".into()),
         Op::SetTempoPoints { .. } => Some("tempo-track".into()),
         Op::SetClipFades { clip, .. } => Some(format!("fades:{clip}")),
+        Op::SetClipEnvelope { clip, .. } => Some(format!("env:{clip}")),
+        Op::SetClipTranspose { clip, .. } => Some(format!("transpose:{clip}")),
         Op::SetChain { chain, patch, .. } if patch.name.is_none() && patch.on.is_none() => Some(format!("chain:{chain}")),
         // Dragging a breakpoint is one undo step.
         Op::SetAutomation { track, target, .. } => Some(format!("auto:{track}:{target:?}")),
@@ -1209,6 +1230,91 @@ fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
             project.prune_assets();
             Ok(label("Clear slot".into()))
         }
+        Op::ReverseClips { clips } => {
+            let found = timeline_or_slot_audio(project, &clips)?;
+            for &(ti, ci) in &found {
+                if let ClipContent::Audio { reverse, fade_in, fade_out, .. } = &mut project.tracks[ti].clips[ci].content {
+                    *reverse = !*reverse;
+                    // What faded out at the end now fades in at the start.
+                    std::mem::swap(fade_in, fade_out);
+                }
+            }
+            Ok(label(if found.len() == 1 { format!("Reverse “{}”", project.tracks[found[0].0].clips[found[0].1].name) } else { format!("Reverse {} clips", found.len()) }))
+        }
+        Op::SetClipTranspose { clip, semitones } => {
+            let (ti, ci) = project.find_clip(&clip).ok_or(OpError::NoClip(clip))?;
+            let c = &mut project.tracks[ti].clips[ci];
+            let ClipContent::Audio { transpose, .. } = &mut c.content else {
+                return Err(OpError::Invalid("Only audio clips are transposed here; move a MIDI clip's notes instead.".into()));
+            };
+            *transpose = semitones.clamp(-24.0, 24.0).round();
+            Ok(label(format!("Transpose “{}”", c.name)))
+        }
+        Op::SetClipEnvelope { clip, points } => {
+            let tempo = project.tempo_map();
+            let (ti, ci) = project.find_clip(&clip).ok_or(OpError::NoClip(clip))?;
+            let c = &mut project.tracks[ti].clips[ci];
+            let length = c.length_beats(&tempo);
+            let ClipContent::Audio { envelope, .. } = &mut c.content else {
+                return Err(OpError::Invalid("Only audio clips have a gain envelope.".into()));
+            };
+            let mut points: Vec<EnvPoint> = points.into_iter().filter(|p| p.time.is_finite() && p.gain.is_finite()).map(|p| EnvPoint { time: p.time.clamp(0.0, length), gain: p.gain.clamp(-60.0, 12.0) }).collect();
+            points.sort_by(|a, b| a.time.total_cmp(&b.time));
+            points.truncate(256);
+            *envelope = points;
+            Ok(label(format!("Gain envelope of “{}”", c.name)))
+        }
+        Op::SetMeter { bar, beats_per_bar } => {
+            if bar == 0 {
+                return Err(OpError::Invalid("The first bar has the song's own time signature: set it in the transport bar.".into()));
+            }
+            project.meters.retain(|m| m.bar != bar);
+            if let Some(beats) = beats_per_bar {
+                project.meters.push(MeterChange { bar, beats_per_bar: beats.clamp(1, 32) });
+                project.meters.sort_by_key(|m| m.bar);
+            }
+            // A change to the length already in force is none.
+            let mut current = project.beats_per_bar;
+            project.meters.retain(|m| {
+                let changes = m.beats_per_bar != current;
+                if changes {
+                    current = m.beats_per_bar;
+                }
+                changes
+            });
+            Ok(label(format!("Time signature at bar {}", bar + 1)))
+        }
+        Op::MoveSection { marker, to } => {
+            let (from, end, name) = region(project, &marker)?;
+            let to = to.max(0.0);
+            if to > from + 1e-9 && to < end - 1e-9 {
+                return Err(OpError::Invalid("Drop the section before or after itself.".into()));
+            }
+            if (to - from).abs() < 1e-9 || (to - end).abs() < 1e-9 {
+                return Err(OpError::Invalid("The section is already there.".into()));
+            }
+            let len = end - from;
+            let section = copy_section(project, from, end, false);
+            remove_time(project, from, end);
+            let at = if to >= end { to - len } else { to };
+            open_time(project, at, len);
+            paste_section(project, at, section);
+            project.prune_assets();
+            Ok(label(format!("Move section “{name}”")))
+        }
+        Op::DuplicateSection { marker } => {
+            let (from, end, name) = region(project, &marker)?;
+            let section = copy_section(project, from, end, true);
+            open_time(project, end, end - from);
+            paste_section(project, end, section);
+            Ok(label(format!("Duplicate section “{name}”")))
+        }
+        Op::DeleteSection { marker } => {
+            let (from, end, name) = region(project, &marker)?;
+            remove_time(project, from, end);
+            project.prune_assets();
+            Ok(label(format!("Delete section “{name}”")))
+        }
         Op::CompTake { track, lane, start, end } => {
             let tempo = project.tempo_map();
             let track = track_mut(project, &track)?;
@@ -1364,6 +1470,17 @@ fn fit_fades(fade_in: f64, fade_out: f64, duration: f64) -> (f64, f64) {
 fn trim(clip: &mut Clip, start: f64, length: f64, tempo: &TempoMap, asset_duration: Option<f64>) {
     let old_start = clip.start;
     let end = start + length;
+    // A reversed clip plays its stretch from the end: it is trimmed as the
+    // forward clip of the reversed file, then turned back.
+    let reversed = match &mut clip.content {
+        ClipContent::Audio { reverse: true, offset, duration, .. } => {
+            let stretch_end = *offset + *duration;
+            let file = asset_duration.unwrap_or(stretch_end);
+            *offset = (file - stretch_end).max(0.0);
+            Some(file)
+        }
+        _ => None,
+    };
     // Audio: where the new edges fall in the file (tempo track and warping included).
     let audio = match &clip.content {
         ClipContent::Audio { offset, .. } => {
@@ -1381,7 +1498,12 @@ fn trim(clip: &mut Clip, start: f64, length: f64, tempo: &TempoMap, asset_durati
             *offset = new_offset;
             *duration = new_duration;
             (*fade_in, *fade_out) = fit_fades(*fade_in, *fade_out, *duration);
+            if let Some(file) = reversed {
+                *offset = (file - *offset - *duration).max(0.0);
+            }
             clip.start = new_start;
+            let now = clip.end(tempo) - clip.start;
+            recut_envelope(clip, old_start - new_start, now);
         }
         ClipContent::Midi { length: clip_length, notes, link } => {
             let shift = start - old_start;
@@ -1440,6 +1562,16 @@ fn split(clip: &Clip, at: f64, tempo: &TempoMap) -> (Clip, Clip) {
         }
         _ => unreachable!("both halves are clones of one clip"),
     }
+    // Backwards, the left half plays the end of the stretch and the right half its start.
+    if let (ClipContent::Audio { reverse: true, offset: lo, duration: ld, .. }, ClipContent::Audio { offset: ro, duration: rd, .. }) = (&mut left.content, &mut right.content) {
+        let stretch_start = *lo;
+        *lo = stretch_start + *rd;
+        *ro = stretch_start;
+        let _ = ld;
+    }
+    recut_envelope(&mut left, 0.0, cut);
+    let rest = clip.end(tempo) - at;
+    recut_envelope(&mut right, -cut, rest);
     (left, right)
 }
 
@@ -1468,6 +1600,192 @@ fn clear_range(track: &mut Track, from: f64, to: f64, tempo: &TempoMap) {
         }
     }
     track.clips = kept;
+}
+
+/// Moves a clip's gain envelope by `by` beats (its start moved the other way)
+/// and cuts it to the clip's new length: the level at both edges stays what it was.
+fn recut_envelope(clip: &mut Clip, by: f64, length: f64) {
+    let ClipContent::Audio { envelope, .. } = &mut clip.content else { return };
+    if envelope.is_empty() {
+        return;
+    }
+    for p in envelope.iter_mut() {
+        p.time += by;
+    }
+    let before = envelope.iter().any(|p| p.time < 0.0);
+    let after = envelope.iter().any(|p| p.time > length);
+    if !before && !after {
+        return;
+    }
+    let level = |at: f64| {
+        let next = envelope.partition_point(|p| p.time <= at);
+        match (next.checked_sub(1).map(|i| envelope[i]), envelope.get(next)) {
+            (Some(a), Some(b)) => a.gain + (b.gain - a.gain) * ((at - a.time) / (b.time - a.time).max(1e-9)),
+            (Some(a), None) => a.gain,
+            (None, Some(b)) => b.gain,
+            (None, None) => 0.0,
+        }
+    };
+    let (first, last) = (level(0.0), level(length));
+    envelope.retain(|p| (0.0..=length).contains(&p.time));
+    if before && envelope.first().is_none_or(|p| p.time > 1e-9) {
+        envelope.insert(0, EnvPoint { time: 0.0, gain: first });
+    }
+    if after && envelope.last().is_none_or(|p| p.time < length - 1e-9) {
+        envelope.push(EnvPoint { time: length, gain: last });
+    }
+}
+
+/// Audio clips by id, on the timeline or in session slots, as (track, clip) indexes.
+fn timeline_or_slot_audio(project: &Project, ids: &[String]) -> Result<Vec<(usize, usize)>, OpError> {
+    if ids.is_empty() {
+        return Err(OpError::Invalid("Select an audio clip first.".into()));
+    }
+    ids.iter()
+        .map(|id| {
+            let (ti, ci) = project.find_clip(id).ok_or_else(|| OpError::NoClip(id.clone()))?;
+            match project.tracks[ti].clips[ci].content {
+                ClipContent::Audio { .. } => Ok((ti, ci)),
+                ClipContent::Midi { .. } => Err(OpError::Invalid("Only audio clips play backwards.".into())),
+            }
+        })
+        .collect()
+}
+
+/// A region marker's start, end and name.
+fn region(project: &Project, marker: &str) -> Result<(f64, f64, String), OpError> {
+    let m = project.markers.iter().find(|m| m.id == marker).ok_or_else(|| OpError::Invalid("That region no longer exists.".into()))?;
+    let end = m.end.filter(|e| *e - m.start >= MIN_CLIP_BEATS).ok_or_else(|| OpError::Invalid("Sections are regions: drag a marker's edge out, or use Region.".into()))?;
+    Ok((m.start, end, m.name.clone()))
+}
+
+/// What a stretch of the song holds, lifted out: each track's clips (cut to
+/// the stretch, starting from 0), each automation lane's points, the markers.
+struct Section {
+    clips: Vec<Vec<Clip>>,
+    points: Vec<Vec<Vec<AutoPoint>>>,
+    markers: Vec<Marker>,
+}
+
+/// Copies `from`…`to` (beats) of every track. `fresh` gives the markers new
+/// ids (a duplicate); otherwise they keep theirs (a move).
+fn copy_section(project: &Project, from: f64, to: f64, fresh: bool) -> Section {
+    let tempo = project.tempo_map();
+    let clips = project
+        .tracks
+        .iter()
+        .map(|track| {
+            track
+                .clips
+                .iter()
+                .filter(|c| c.slot.is_none())
+                .filter_map(|c| {
+                    let (s, e) = (c.start.max(from), c.end(&tempo).min(to));
+                    (e - s >= MIN_CLIP_BEATS).then(|| {
+                        let mut piece = c.clone();
+                        piece.id = crate::new_id("c");
+                        trim(&mut piece, s, e - s, &tempo, None);
+                        piece.start -= from;
+                        piece
+                    })
+                })
+                .collect()
+        })
+        .collect();
+    let inside = |t: f64| t >= from - 1e-9 && t < to - 1e-9;
+    let points = project
+        .tracks
+        .iter()
+        .map(|track| track.automation.iter().map(|lane| lane.points.iter().filter(|p| inside(p.time)).map(|p| AutoPoint { time: p.time - from, value: p.value }).collect()).collect())
+        .collect();
+    let markers = project
+        .markers
+        .iter()
+        .filter(|m| inside(m.start))
+        .map(|m| Marker { id: if fresh { crate::new_id("m") } else { m.id.clone() }, name: m.name.clone(), start: m.start - from, end: m.end.map(|e| e.min(to) - from) })
+        .collect();
+    Section { clips, points, markers }
+}
+
+/// Takes `from`…`to` (beats) out of the song: what is inside goes, what
+/// comes after moves up to close the gap.
+fn remove_time(project: &mut Project, from: f64, to: f64) {
+    let tempo = project.tempo_map();
+    let len = to - from;
+    for track in &mut project.tracks {
+        clear_range(track, from, to, &tempo);
+        shift_after(track, to, -len, &[]);
+        for clip in track.takes.iter_mut().flat_map(|l| l.clips.iter_mut()).filter(|c| c.start >= to - 1e-9) {
+            clip.start -= len;
+        }
+        for lane in &mut track.automation {
+            lane.points.retain(|p| p.time < from - 1e-9 || p.time >= to - 1e-9);
+            for p in lane.points.iter_mut().filter(|p| p.time >= to - 1e-9) {
+                p.time -= len;
+            }
+        }
+    }
+    project.markers.retain(|m| m.start < from - 1e-9 || m.start >= to - 1e-9);
+    for m in &mut project.markers {
+        if m.start >= to - 1e-9 {
+            m.start -= len;
+            m.end = m.end.map(|e| e - len);
+        } else if let Some(e) = m.end.filter(|e| *e > from) {
+            // A region reaching into the stretch ends where it began, or loses its length.
+            m.end = Some(if e >= to { e - len } else { from }.max(m.start + MIN_CLIP_BEATS));
+        }
+    }
+}
+
+/// Opens `len` beats of room at `at`: clips across it are split there, and
+/// everything from `at` on moves later.
+fn open_time(project: &mut Project, at: f64, len: f64) {
+    let tempo = project.tempo_map();
+    for track in &mut project.tracks {
+        let mut clips = Vec::with_capacity(track.clips.len() + 1);
+        for clip in std::mem::take(&mut track.clips) {
+            if clip.slot.is_none() && clip.start < at - 1e-9 && clip.end(&tempo) > at + 1e-9 {
+                let (left, right) = split(&clip, at, &tempo);
+                clips.push(left);
+                clips.push(right);
+            } else {
+                clips.push(clip);
+            }
+        }
+        track.clips = clips;
+        shift_after(track, at, len, &[]);
+        for clip in track.takes.iter_mut().flat_map(|l| l.clips.iter_mut()).filter(|c| c.start >= at - 1e-9) {
+            clip.start += len;
+        }
+        for p in track.automation.iter_mut().flat_map(|l| l.points.iter_mut()).filter(|p| p.time >= at - 1e-9) {
+            p.time += len;
+        }
+    }
+    for m in &mut project.markers {
+        if m.start >= at - 1e-9 {
+            m.start += len;
+            m.end = m.end.map(|e| e + len);
+        } else if let Some(e) = m.end.filter(|e| *e > at + 1e-9) {
+            m.end = Some(e + len);
+        }
+    }
+}
+
+/// Puts a lifted stretch back at `at` (into room opened for it).
+fn paste_section(project: &mut Project, at: f64, section: Section) {
+    for ((track, clips), lanes) in project.tracks.iter_mut().zip(section.clips).zip(section.points) {
+        track.clips.extend(clips.into_iter().map(|mut c| {
+            c.start += at;
+            c
+        }));
+        track.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
+        for (lane, points) in track.automation.iter_mut().zip(lanes) {
+            lane.points.extend(points.into_iter().map(|p| AutoPoint { time: p.time + at, value: p.value }));
+            lane.points.sort_by(|a, b| a.time.total_cmp(&b.time));
+        }
+    }
+    project.markers.extend(section.markers.into_iter().map(|m| Marker { start: m.start + at, end: m.end.map(|e| e + at), ..m }));
+    project.markers.sort_by(|a, b| a.start.total_cmp(&b.start));
 }
 
 /// Seconds of fade where comped pieces meet.
@@ -1894,6 +2212,107 @@ mod tests {
         assert_eq!(project.tracks[2].devices[0].pad_chains.len(), 1);
         history.undo(&mut project);
         assert_eq!(project.tracks[2].devices[0].pad_chains.len(), 2);
+    }
+
+    #[test]
+    fn clips_reverse_transpose_and_carry_a_gain_envelope() {
+        // 60 BPM; the clip plays seconds 2–6 of a 10 s file from beat 4.
+        let (mut project, clip) = song_with_audio_clip();
+        let mut history = History::new();
+        let audio = |p: &Project, i: usize| match &p.tracks[0].clips[i].content {
+            ClipContent::Audio { offset, duration, reverse, transpose, envelope, .. } => (*offset, *duration, *reverse, *transpose, envelope.clone()),
+            _ => unreachable!(),
+        };
+        let points = vec![EnvPoint { time: 3.0, gain: -90.0 }, EnvPoint { time: 1.0, gain: 0.0 }, EnvPoint { time: 9.0, gain: 3.0 }];
+        apply(&mut project, &mut history, Op::SetClipEnvelope { clip: clip.clone(), points }).unwrap();
+        // Sorted, inside the clip, silence at −60 dB.
+        assert_eq!(audio(&project, 0).4, [EnvPoint { time: 1.0, gain: 0.0 }, EnvPoint { time: 3.0, gain: -60.0 }, EnvPoint { time: 4.0, gain: 3.0 }]);
+        apply(&mut project, &mut history, Op::SetClipTranspose { clip: clip.clone(), semitones: 30.4 }).unwrap();
+        assert_eq!(audio(&project, 0).3, 24.0);
+        apply(&mut project, &mut history, Op::ReverseClips { clips: vec![clip.clone()] }).unwrap();
+        assert!(audio(&project, 0).2);
+
+        // Split a beat in: backwards, the left piece plays the last second of the stretch.
+        apply(&mut project, &mut history, Op::SplitClip { clip: clip.clone(), at: 5.0 }).unwrap();
+        assert_eq!((audio(&project, 0).0, audio(&project, 0).1), (5.0, 1.0));
+        assert_eq!((audio(&project, 1).0, audio(&project, 1).1), (2.0, 3.0));
+        // The envelope stays where it was in the song: the right piece's points move a beat earlier.
+        assert_eq!(audio(&project, 1).4.iter().map(|p| p.time).collect::<Vec<_>>(), [0.0, 2.0, 3.0]);
+        // The left piece keeps what falls inside it.
+        assert_eq!(audio(&project, 0).4, [EnvPoint { time: 1.0, gain: 0.0 }]);
+        // Trimming the right piece's start by a beat takes a second off the end of its stretch.
+        let right = project.tracks[0].clips[1].id.clone();
+        apply(&mut project, &mut history, Op::TrimClip { clip: right, start: 6.0, length: 2.0, ripple: false }).unwrap();
+        assert_eq!((audio(&project, 1).0, audio(&project, 1).1), (2.0, 2.0));
+        // Its envelope is cut at the new start, at the level the line had there (halfway from 0 to −60 dB).
+        assert_eq!(audio(&project, 1).4, [EnvPoint { time: 0.0, gain: -30.0 }, EnvPoint { time: 1.0, gain: -60.0 }, EnvPoint { time: 2.0, gain: 3.0 }]);
+        // Forwards again.
+        apply(&mut project, &mut history, Op::ReverseClips { clips: vec![clip] }).unwrap();
+        assert!(!audio(&project, 0).2);
+        let midi = project.tracks[2].id.clone();
+        let m = apply(&mut project, &mut history, Op::AddMidiClip { track: midi, start: 0.0, length: 4.0, notes: vec![], name: None, slot: None }).unwrap().created.unwrap();
+        assert!(apply(&mut project, &mut history, Op::ReverseClips { clips: vec![m] }).is_err());
+    }
+
+    #[test]
+    fn time_signature_changes_are_kept_in_order_and_meaningful() {
+        let mut project = Project::empty("Song");
+        let mut history = History::new();
+        let mut set = |project: &mut Project, bar, beats| apply(project, &mut history, Op::SetMeter { bar, beats_per_bar: beats });
+        assert!(set(&mut project, 0, Some(3)).is_err(), "the first bar is the song's own");
+        set(&mut project, 8, Some(3)).unwrap();
+        set(&mut project, 4, Some(5)).unwrap();
+        set(&mut project, 6, Some(5)).unwrap();
+        // The change at bar 6 repeats the one before it: it goes.
+        assert_eq!(project.meters.iter().map(|m| (m.bar, m.beats_per_bar)).collect::<Vec<_>>(), [(4, 5), (8, 3)]);
+        assert_eq!(project.meter_map().bar_start(9), 4.0 * 4.0 + 4.0 * 5.0 + 3.0);
+        set(&mut project, 4, None).unwrap();
+        assert_eq!(project.meters.len(), 1);
+    }
+
+    #[test]
+    fn sections_move_duplicate_and_delete_as_blocks() {
+        // 60 BPM. A: beats 0–4, B: 4–8 (the 4 s clip of the test song), C: 8–12.
+        let (mut project, b) = song_with_audio_clip();
+        let mut history = History::new();
+        let track = project.tracks[0].id.clone();
+        project.tracks[0].clips.push(Clip::audio("A", "a1", 0.0, 0.0, 4.0));
+        project.tracks[0].clips.push(Clip::audio("C", "a1", 8.0, 6.0, 4.0));
+        project.tracks[0].clips.sort_by(|x, y| x.start.total_cmp(&y.start));
+        apply(&mut project, &mut history, Op::SetAutomation { track: track.clone(), target: AutoTarget::Volume, points: vec![AutoPoint { time: 1.0, value: -3.0 }, AutoPoint { time: 5.0, value: -6.0 }, AutoPoint { time: 9.0, value: -9.0 }] }).unwrap();
+        let region = apply(&mut project, &mut history, Op::AddMarker { name: Some("Verse".into()), start: 4.0, end: Some(8.0) }).unwrap().created.unwrap();
+        apply(&mut project, &mut history, Op::AddMarker { name: Some("End".into()), start: 10.0, end: None }).unwrap();
+        let names = |p: &Project| p.tracks[0].clips.iter().map(|c| (c.name.clone(), c.start)).collect::<Vec<_>>();
+        let auto = |p: &Project| p.tracks[0].automation[0].points.iter().map(|x| (x.time, x.value)).collect::<Vec<_>>();
+        let marks = |p: &Project| p.markers.iter().map(|m| (m.name.clone(), m.start, m.end)).collect::<Vec<_>>();
+        let named = |n: &str, s: f64| (n.to_string(), s);
+
+        // The verse to the front: A and everything after it make room.
+        apply(&mut project, &mut history, Op::MoveSection { marker: region.clone(), to: 0.0 }).unwrap();
+        assert_eq!(names(&project), [named("Take", 0.0), named("A", 4.0), named("C", 8.0)]);
+        assert_eq!(auto(&project), [(1.0, -6.0), (5.0, -3.0), (9.0, -9.0)]);
+        assert_eq!(marks(&project), [("Verse".to_string(), 0.0, Some(4.0)), ("End".to_string(), 10.0, None)]);
+        assert!(project.tracks[0].clips.iter().any(|c| c.id != b), "the pieces are new clips");
+
+        // To the end (dropped at beat 12): A and C close up, the verse follows them.
+        apply(&mut project, &mut history, Op::MoveSection { marker: region.clone(), to: 12.0 }).unwrap();
+        assert_eq!(names(&project), [named("A", 0.0), named("C", 4.0), named("Take", 8.0)]);
+        assert_eq!(marks(&project), [("End".to_string(), 6.0, None), ("Verse".to_string(), 8.0, Some(12.0))]);
+        assert!(apply(&mut project, &mut history, Op::MoveSection { marker: region.clone(), to: 10.0 }).is_err(), "not into itself");
+
+        // A copy right after it, with its automation and a region of its own.
+        apply(&mut project, &mut history, Op::DuplicateSection { marker: region.clone() }).unwrap();
+        assert_eq!(names(&project), [named("A", 0.0), named("C", 4.0), named("Take", 8.0), named("Take", 12.0)]);
+        assert_eq!(auto(&project), [(1.0, -3.0), (5.0, -9.0), (9.0, -6.0), (13.0, -6.0)]);
+        assert_eq!(project.markers.iter().filter(|m| m.name == "Verse").count(), 2);
+
+        // Deleting the first verse closes the gap; a clip across the edge of a section is cut there.
+        apply(&mut project, &mut history, Op::DeleteSection { marker: region }).unwrap();
+        assert_eq!(names(&project), [named("A", 0.0), named("C", 4.0), named("Take", 8.0)]);
+        let across = apply(&mut project, &mut history, Op::AddMarker { name: Some("Half".into()), start: 2.0, end: Some(6.0) }).unwrap().created.unwrap();
+        apply(&mut project, &mut history, Op::DeleteSection { marker: across }).unwrap();
+        assert_eq!(names(&project), [named("A", 0.0), named("C", 2.0), named("Take", 4.0)]);
+        assert_eq!(history.undo_label(), Some("Delete section “Half”"));
     }
 
     #[test]

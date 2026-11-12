@@ -68,6 +68,12 @@ Releases are built by GitHub Actions from a version tag: see [RELEASING.md](RELE
 - **Session recording.** An armed track's empty slots are record buttons (or right-click any empty
   slot › Record here): the clip stops on the bar line, loops in time and plays on. Right-click a scene to
   write its clips into the arrangement at the playhead.
+- **Clips.** An audio clip can play backwards (Reverse on the clip toolbar) and at another pitch (−24
+  to +24 semitones, same length). With the Automation tool (A), click on a clip to draw its gain over
+  time: click adds a point, double-click removes it.
+- **Time signatures and sections.** Right-click the ruler to change the time signature from any bar.
+  Ctrl-drag a region to move everything under it on every track as one block; right-click it to
+  duplicate the section or delete it and close the gap.
 - **Linear-phase EQ.** The Equalizer's Phase choice switches to a linear-phase filter: the same curve
   with no frequency shifted in time, for mastering and parallel tracks. Its delay (107 ms at 48 kHz) is
   made up for on every other track and cut from exports.

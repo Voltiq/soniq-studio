@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use soniq_dsp::{AudioFx, External, Instrument, Key, MacroLink, MidiFx, PadChains, PadFx, ParamBank, Params, Rack, RackLayer, SampleSlot, Warper};
 use soniq_engine::{ClipNode, ClipWarp, Dest, FadeShape, Follow, FxNode, InstrumentNode, LaneNode, ModNode, ModSource, ScheduledNote, SlotNode, db_to_gain, track_key};
-use soniq_project::{AutoTarget, Clip, ClipContent, Device, FadeCurve, DeviceParam, DeviceRole, MODULATOR_TYPES, PLUGIN_TYPE, TempoMap, Track, WarpMode};
+use soniq_project::{AutoTarget, Clip, ClipContent, Device, DeviceParam, DeviceRole, EnvPoint, FadeCurve, MODULATOR_TYPES, PLUGIN_TYPE, TempoMap, Track, WarpMode};
 
 use crate::session::Pool;
 
@@ -186,8 +186,10 @@ fn clip_notes(clip: &Clip, at: impl Fn(f64) -> u64) -> Vec<ScheduledNote> {
 /// (`in_loop`) from 0 in a session slot. A warped clip spans its beats and
 /// stretches to fit them.
 pub fn audio_node(clip: &Clip, pool: &Pool, timeline: &Timeline, in_loop: bool) -> Option<ClipNode> {
-    let ClipContent::Audio { asset, offset, duration, gain, fade_in, fade_out, warp, curve } = &clip.content else { return None };
-    let pooled = pool.get(asset)?;
+    let ClipContent::Audio { asset, offset, duration, gain, fade_in, fade_out, warp, curve, reverse, transpose, envelope } = &clip.content else { return None };
+    // Backwards or at another pitch, it plays audio made from the asset for that.
+    let cents = (transpose * 100.0).round() as i32;
+    let buffer = pool.variant(asset, cents, *reverse)?;
     let rate = timeline.rate;
     let samples = |sec: f64| (sec.max(0.0) * rate).round() as u64;
     let start = if in_loop { 0 } else { timeline.at(clip.start) };
@@ -196,8 +198,11 @@ pub fn audio_node(clip: &Clip, pool: &Pool, timeline: &Timeline, in_loop: bool) 
         Some(_) => timeline.at(clip.end(timeline.tempo)).saturating_sub(start),
         None => samples(*duration),
     };
-    let mut node = ClipNode::new(start, len, samples(*offset), Arc::clone(&pooled.playback));
+    // Backwards, its stretch of the file starts from the stretch's end in the reversed audio.
+    let from = if *reverse { buffer.frames() as f64 / rate - offset - duration } else { *offset };
+    let mut node = ClipNode::new(start, len, samples(from), buffer);
     node.gain = db_to_gain(*gain);
+    node.env = gain_envelope(envelope, |beats| if in_loop { (beats * timeline.loop_beat()).round() as u64 } else { timeline.at(clip.start + beats).saturating_sub(start) });
     node.fade_in = samples(*fade_in);
     node.fade_out = samples(*fade_out);
     node.curve = match curve {
@@ -213,11 +218,29 @@ pub fn audio_node(clip: &Clip, pool: &Pool, timeline: &Timeline, in_loop: bool) 
             WarpMode::Tones => soniq_dsp::WarpMode::Tones,
             WarpMode::Repitch => soniq_dsp::WarpMode::Repitch,
         };
-        let onsets = (w.mode == WarpMode::Beats).then(|| pool.warp_onsets(asset)).flatten();
+        let onsets = (w.mode == WarpMode::Beats).then(|| pool.variant_onsets(asset, cents, *reverse)).flatten();
         let start_beat = if in_loop { 0.0 } else { clip.start };
         node = node.with_warp(ClipWarp::new(Warper::new(mode, onsets, rate as u32), start_beat, rate * 60.0 / w.bpm));
     }
     Some(node)
+}
+
+/// A clip's gain envelope for the engine: each breakpoint at its sample from
+/// the clip's start (`at` turns beats into those), as a gain. The lines
+/// between points are straight in dB, so each is cut into short pieces.
+fn gain_envelope(points: &[EnvPoint], at: impl Fn(f64) -> u64) -> Vec<(u64, f32)> {
+    const PIECES: usize = 8;
+    let mut out = Vec::with_capacity(points.len() * PIECES);
+    for (i, p) in points.iter().enumerate() {
+        if let Some(prev) = i.checked_sub(1).map(|j| points[j]) {
+            for k in 1..PIECES {
+                let f = k as f64 / PIECES as f64;
+                out.push((at(prev.time + (p.time - prev.time) * f), db_to_gain(prev.gain + (p.gain - prev.gain) * f)));
+            }
+        }
+        out.push((at(p.time), db_to_gain(p.gain)));
+    }
+    out
 }
 
 /// The track's session clips, sorted by scene, each looping over its length.

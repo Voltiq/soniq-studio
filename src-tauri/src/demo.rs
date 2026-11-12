@@ -170,6 +170,7 @@ pub fn session(rate: u32) -> Session {
     let mut project = Project {
         mixes: Vec::new(),
         other_mix: None,
+        meters: Vec::new(),
         version: SCHEMA_VERSION,
         id: new_id("p"),
         name: "Night Drive (demo)".into(),

@@ -15,7 +15,9 @@ import { positionBeats, tempoLaneShown, useStore } from "../state/store";
 import { beatAfter, clipSeconds, tempoOf, type TempoMap } from "../state/tempo";
 import { clipLength, projectLength, snapBeats, timelineClips, type Clip, type FadeCurve, type Track } from "../state/types";
 import { AutomationRow, shownLanes } from "./AutomationLane";
+import { ClipEnvelope } from "./ClipEnvelope";
 import { TakeLanes } from "./TakeLanes";
+import { MeterMap } from "../state/meter";
 import { TempoRow } from "./TempoLane";
 
 export const HEADER_W = 224;
@@ -24,15 +26,29 @@ const CLIP_HEAD = 18;
 function Ruler({ width, lengthBeats }: { width: number; lengthBeats: number }) {
   const pxPerBeat = useStore((s) => s.pxPerBeat);
   const bpb = useStore((s) => s.project.beatsPerBar);
+  const changes = useStore((s) => s.project.meters);
+  const meter = useMemo(() => new MeterMap(bpb, changes ?? []), [bpb, changes]);
+  // The bar whose time signature is being set, and where its menu hangs.
+  const [menuBar, setMenuBar] = useState<number | null>(null);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const loop = useStore((s) => s.loop);
   const snap = useStore((s) => s.snap);
   const punch = useStore((s) => s.punch);
   const { seekBeats, setLoopRange } = useStore.getState();
   const drag = useRef<number | null>(null);
 
-  const barPx = pxPerBeat * bpb;
-  const stride = barPx < 36 ? 4 : barPx < 72 ? 2 : 1;
-  const bars = Math.ceil(lengthBeats / bpb) + 4;
+  // Bar numbers, thinned out where bars are narrow; each stretch of one time signature counts from its own first bar.
+  const labels = useMemo(() => {
+    const out: { bar: number; beat: number }[] = [];
+    const until = lengthBeats + 4 * bpb;
+    meter.segments.forEach((seg, i) => {
+      const barPx = pxPerBeat * seg.beatsPerBar;
+      const stride = barPx < 36 ? 4 : barPx < 72 ? 2 : 1;
+      const end = meter.segments[i + 1]?.start ?? until;
+      for (let k = 0; seg.start + k * seg.beatsPerBar < end; k += stride) out.push({ bar: seg.bar + k, beat: seg.start + k * seg.beatsPerBar });
+    });
+    return out;
+  }, [meter, pxPerBeat, lengthBeats, bpb]);
 
   const toBeats = (e: PointerEvent<HTMLDivElement>) => {
     const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
@@ -40,10 +56,17 @@ function Ruler({ width, lengthBeats }: { width: number; lengthBeats: number }) {
   };
 
   return (
+    <>
     <div
       className="ruler"
       style={{ width }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
+        setMenuBar(meter.barAt(Math.max(0, x / pxPerBeat)).bar);
+      }}
       onPointerDown={(e) => {
+        if (e.button !== 0) return;
         const b = toBeats(e);
         if (e.shiftKey) {
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -54,18 +77,93 @@ function Ruler({ width, lengthBeats }: { width: number; lengthBeats: number }) {
       }}
       onPointerMove={(e) => drag.current !== null && setLoopRange(drag.current, toBeats(e))}
       onPointerUp={() => (drag.current = null)}
-      title="Click to move the playhead · Shift-drag to set the loop"
+      title="Click to move the playhead · Shift-drag to set the loop · right-click for the time signature from a bar"
     >
       <div
         className={`loop-band${loop.enabled ? " on" : ""}${punch ? " punch" : ""}`}
         style={{ left: loop.start * pxPerBeat, width: (loop.end - loop.start) * pxPerBeat }}
         aria-hidden="true"
       />
-      {Array.from({ length: Math.ceil(bars / stride) }, (_, i) => i * stride).map((bar) => (
-        <span key={bar} className="bar-label" style={{ left: bar * barPx }}>
+      {labels.map(({ bar, beat }) => (
+        <span key={bar} className="bar-label" style={{ left: beat * pxPerBeat }}>
           {bar + 1}
         </span>
       ))}
+      {meter.segments.slice(1).map((seg) => (
+        <button
+          key={seg.bar}
+          type="button"
+          className="meter-tag"
+          style={{ left: seg.start * pxPerBeat + 10 + 7 * String(seg.bar + 1).length }}
+          title={`${seg.beatsPerBar} / 4 from bar ${seg.bar + 1} · click to change or remove`}
+          aria-label={`Time signature ${seg.beatsPerBar} / 4 from bar ${seg.bar + 1}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => setMenuBar(seg.bar)}
+        >
+          {seg.beatsPerBar}/4
+        </button>
+      ))}
+      {menuBar !== null && <span className="meter-anchor" style={{ left: meter.barStart(menuBar) * pxPerBeat }} ref={setAnchor} />}
+    </div>
+    {menuBar !== null && anchor && (
+      <Popover anchor={anchor} onClose={() => setMenuBar(null)} label="Time signature">
+        <div className="mi-menu mi-group">Time signature from bar {menuBar + 1}</div>
+        {[2, 3, 4, 5, 6, 7, 9, 12].map((n) => (
+          <button
+            key={n}
+            type="button"
+            role="menuitem"
+            className="mi"
+            onClick={() => {
+              setMenuBar(null);
+              useStore.getState().setMeter(menuBar, n);
+            }}
+          >
+            <span className="mi-check">{meter.barAt(meter.barStart(menuBar)).beatsPerBar === n && <Icon name="check" size={15} />}</span>
+            <span className="mi-label">{n} / 4</span>
+          </button>
+        ))}
+        {meter.segments.some((seg) => seg.bar === menuBar && seg.bar > 0) && (
+          <>
+            <div className="msep" role="separator" />
+            <button
+              type="button"
+              role="menuitem"
+              className="mi"
+              onClick={() => {
+                setMenuBar(null);
+                useStore.getState().setMeter(menuBar, null);
+              }}
+            >
+              <span className="mi-check" />
+              <span className="mi-label">Remove the change here</span>
+            </button>
+          </>
+        )}
+      </Popover>
+    )}
+    </>
+  );
+}
+
+/** Bar lines when the time signature changes along the song: one stretch of evenly spaced lines per signature, behind the lanes. */
+function MeterLines({ laneWidth }: { laneWidth: number }) {
+  const pxPerBeat = useStore((s) => s.pxPerBeat);
+  const bpb = useStore((s) => s.project.beatsPerBar);
+  const changes = useStore((s) => s.project.meters);
+  const meter = useMemo(() => new MeterMap(bpb, changes ?? []), [bpb, changes]);
+  if (!meter.changes) return null;
+  return (
+    <div className="meter-lines" style={{ left: HEADER_W, width: laneWidth }} aria-hidden="true">
+      {meter.segments.map((seg, i) => {
+        const end = meter.segments[i + 1]?.start;
+        return (
+          <span
+            key={seg.bar}
+            style={{ left: seg.start * pxPerBeat, width: end === undefined ? undefined : (end - seg.start) * pxPerBeat, right: end === undefined ? 0 : undefined, backgroundSize: `${seg.beatsPerBar * pxPerBeat}px 100%` }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -76,6 +174,8 @@ interface MarkerDrag {
   x: number;
   dx: number;
   free: boolean;
+  /** Ctrl-dragging a region moves the section: everything in it comes along. */
+  section: boolean;
 }
 
 /** Markers and regions (Audacity's labels): drag to move, drag a region's edges, double-click to rename. */
@@ -85,13 +185,31 @@ function MarkerLane({ width }: { width: number }) {
   const selected = useStore((s) => s.selectedMarkerId);
   const [editing, setEditing] = useState<string | null>(null);
   const [drag, setDrag] = useState<MarkerDrag | null>(null);
-  const { selectMarker, moveMarker, renameMarker, seekBeats, run } = useStore.getState();
+  const [menu, setMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
+  const { selectMarker, moveMarker, renameMarker, removeMarker, seekBeats, run, moveSection, sectionToPlayhead, duplicateSection, deleteSection } = useStore.getState();
   const snap = (beats: number, free: boolean) => {
     const s = useStore.getState();
     return Math.max(0, free ? beats : snapBeats(beats, s.snap, s.project.beatsPerBar));
   };
 
+  const item = (label: string, act: (id: string) => void) => (
+    <button
+      type="button"
+      role="menuitem"
+      className="mi"
+      onClick={() => {
+        const id = menu?.id;
+        setMenu(null);
+        if (id) act(id);
+      }}
+    >
+      <span className="mi-check" />
+      <span className="mi-label">{label}</span>
+    </button>
+  );
+
   return (
+    <>
     <div
       className="lane markers"
       style={{ width }}
@@ -119,14 +237,20 @@ function MarkerLane({ width }: { width: number }) {
         return (
           <div
             key={m.id}
-            className={`marker${region ? " region" : ""}${selected === m.id ? " on" : ""}`}
+            className={`marker${region ? " region" : ""}${selected === m.id ? " on" : ""}${drag?.id === m.id && drag.section && region ? " moving-section" : ""}`}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              selectMarker(m.id);
+              setMenu({ id: m.id, anchor: e.currentTarget });
+            }}
             style={{ left: start * pxPerBeat, width: region ? Math.max(6, ((end ?? start) - start) * pxPerBeat) : undefined }}
             onPointerDown={(e) => {
               e.stopPropagation();
               if (e.button !== 0 || editing === m.id) return;
               e.currentTarget.setPointerCapture(e.pointerId);
               const mode = ((e.target as HTMLElement).dataset.edge as MarkerDrag["mode"] | undefined) ?? "move";
-              setDrag({ id: m.id, mode, x: e.clientX, dx: 0, free: e.altKey });
+              setDrag({ id: m.id, mode, x: e.clientX, dx: 0, free: e.altKey, section: e.ctrlKey || e.metaKey });
             }}
             onPointerMove={(e) => drag?.id === m.id && setDrag({ ...drag, dx: e.clientX - drag.x, free: e.altKey })}
             onPointerUp={() => {
@@ -136,6 +260,9 @@ function MarkerLane({ width }: { width: number }) {
               if (Math.abs(d.dx) <= 3) {
                 selectMarker(m.id);
                 seekBeats(m.start);
+              } else if (d.mode === "move" && d.section && m.end !== undefined) {
+                // Dragged later, it lands so that it starts where it was dropped.
+                moveSection(m.id, start < m.start ? start : start + (m.end - m.start));
               } else if (d.mode === "move") moveMarker(m.id, start);
               else moveMarker(m.id, start, end);
             }}
@@ -144,7 +271,7 @@ function MarkerLane({ width }: { width: number }) {
               e.stopPropagation();
               setEditing(m.id);
             }}
-            title={`${m.name} · drag to move${region ? ", drag the edges to resize" : ""} · double-click to rename`}
+            title={`${m.name} · drag to move${region ? ", drag the edges to resize · Ctrl-drag moves the section with everything in it · right-click for more" : ""} · double-click to rename`}
           >
             {region && <span className="mk-edge start" data-edge="start" aria-hidden="true" />}
             <span className="mk-flag">
@@ -176,6 +303,22 @@ function MarkerLane({ width }: { width: number }) {
         );
       })}
     </div>
+    {menu && (
+      <Popover anchor={menu.anchor} onClose={() => setMenu(null)} label="Marker">
+        {markers.find((m) => m.id === menu.id)?.end !== undefined && (
+          <>
+            <div className="mi-menu mi-group">Section · all tracks</div>
+            {item("Move the section to the playhead", sectionToPlayhead)}
+            {item("Duplicate the section", duplicateSection)}
+            {item("Delete the section and close the gap", deleteSection)}
+            <div className="msep" role="separator" />
+          </>
+        )}
+        {item("Rename", setEditing)}
+        {item("Delete the marker only", removeMarker)}
+      </Popover>
+    )}
+    </>
   );
 }
 
@@ -282,6 +425,7 @@ function ClipView({ track, clip, pxPerBeat, selected, xfade }: { track: Track; c
   // Dragged along with another picked clip.
   const follow = useStore((s) => (selected ? s.groupDrag : null));
   const tempo = useStore((s) => tempoOf(s.project));
+  const automationTool = useStore((s) => s.tool === "automation");
   const TRACK_H = useStore((s) => trackHeight(s.density));
   const assetSeconds = useStore((s) => {
     const a = clip.kind === "audio" ? s.project.assets.find((x) => x.id === clip.asset) : undefined;
@@ -395,13 +539,15 @@ function ClipView({ track, clip, pxPerBeat, selected, xfade }: { track: Track; c
           <>
             <AudioClipBody
               asset={clip.asset}
-              offset={clip.offset + shiftSeconds}
+              offset={clip.reverse ? clip.offset : clip.offset + shiftSeconds}
               duration={audioSeconds}
               width={width}
               height={body}
               color={color}
+              reverse={clip.reverse}
             />
             <FadeOverlay width={width} height={body} fadeIn={fadeInPx} fadeOut={fadeOutPx} curve={clip.curve} />
+            <ClipEnvelope clip={clip} lengthBeats={p.len} width={width} height={body} editable={automationTool && !drag} />
             {xfade > 0 && !drag?.moved && <CrossfadeMark width={Math.min(width, xfade * pxPerBeat)} height={body} />}
           </>
         ) : (
@@ -477,12 +623,18 @@ interface AudioBodyProps {
   width: number;
   height: number;
   color: string;
+  /** The clip plays this stretch backwards: so is it drawn. */
+  reverse?: boolean;
 }
 
-function AudioClipBody({ asset, offset, duration, width, height, color }: AudioBodyProps) {
+function AudioClipBody({ asset, offset, duration, width, height, color, reverse }: AudioBodyProps) {
   const missing = useStore((s) => s.project.assets.find((a) => a.id === asset)?.missing ?? false);
   const data = usePeaks(missing ? undefined : asset);
-  const slice = useMemo(() => (data ? clipPeaks(data, offset, duration) : null), [data, offset, duration]);
+  const slice = useMemo(() => {
+    if (!data) return null;
+    const peaks = clipPeaks(data, offset, duration);
+    return reverse ? peaks.map((ch) => Float32Array.from(ch).reverse()) : peaks;
+  }, [data, offset, duration, reverse]);
   if (missing) return <span className="clip-missing">Missing audio file</span>;
   if (!slice) return null;
   return <Waveform peaks={slice[0]} peaksR={slice[1]} width={width} height={height} color={color} />;
@@ -820,11 +972,33 @@ function ClipHud() {
     return () => watch.disconnect();
   }, [clip?.id]);
   if (!clip) return null;
+  const { reverseClips, setClipTranspose } = useStore.getState();
+  const pitch = clip.transpose ?? 0;
+  const commitPitch = (value: number) => Number.isFinite(value) && Math.round(value) !== pitch && setClipTranspose(clip.id, Math.round(value));
   return (
-    <div ref={ref} className={`clip-hud glass${width < 900 ? " compact" : ""}${width < 760 ? " tight" : ""}`}>
+    <div ref={ref} className={`clip-hud glass${width < 1150 ? " compact" : ""}${width < 900 ? " tight" : ""}`}>
       <span className="clip-hud-name" title={clip.name}>
         {clip.name}
       </span>
+      <button className="chipb tip-t" type="button" aria-pressed={!!clip.reverse} data-tip="Play the clip backwards" onClick={() => reverseClips([clip.id])}>
+        Reverse
+      </button>
+      <label className="cp-field clip-pitch tip-t" data-tip="Pitch in semitones, −24 to +24; the length stays">
+        <input
+          className="num-input"
+          type="number"
+          min={-24}
+          max={24}
+          step={1}
+          defaultValue={pitch}
+          key={`${clip.id}-${pitch}`}
+          aria-label="Pitch in semitones"
+          onBlur={(e) => commitPitch(Number(e.target.value))}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        />
+        <span>st</span>
+      </label>
+      <span className="vsep" />
       <WarpControls clip={clip} />
     </div>
   );
@@ -838,6 +1012,7 @@ export function ArrangeView() {
   const pxPerBeat = useStore((s) => s.pxPerBeat);
   const lengthBeats = useStore((s) => projectLength(s.project));
   const bpb = useStore((s) => s.project.beatsPerBar);
+  const metered = useStore((s) => (s.project.meters?.length ?? 0) > 0);
   const addTrack = useStore((s) => s.addTrack);
   const importAudio = useStore((s) => s.importAudio);
   const addMarker = useStore((s) => s.addMarker);
@@ -856,9 +1031,10 @@ export function ArrangeView() {
     <div className="arrange" data-tool={tool}>
       <div className="arr-scroll" ref={scroller}>
         <div
-          className="arr-inner"
+          className={metered ? "arr-inner metered" : "arr-inner"}
           style={{ width: HEADER_W + laneWidth, "--bar": `${pxPerBeat * bpb}px`, "--beat": `${pxPerBeat}px` } as CSSProperties}
         >
+          <MeterLines laneWidth={laneWidth} />
           <div className="arr-row ruler-row">
             <div className="corner">
               <span className="eyebrow">{allTracks.length} tracks</span>

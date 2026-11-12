@@ -63,11 +63,14 @@ pub struct ClipNode {
     pub key: u64,
     /// Follows the song's tempo instead of playing at its own speed (boxed: its scratch buffers are large).
     pub warp: Option<Box<ClipWarp>>,
+    /// The clip's gain over time: (samples from its start, gain), joined by
+    /// straight lines, holding before the first and after the last. Empty: none.
+    pub env: Vec<(u64, f32)>,
 }
 
 impl ClipNode {
     pub fn new(start: u64, len: u64, offset: u64, buffer: Arc<AudioBuffer>) -> Self {
-        Self { start, len, offset, gain: 1.0, fade_in: 0, fade_out: 0, xfade_in: 0, xfade_out: 0, curve: FadeShape::Standard, buffer, key: 0, warp: None }
+        Self { start, len, offset, gain: 1.0, fade_in: 0, fade_out: 0, xfade_in: 0, xfade_out: 0, curve: FadeShape::Standard, buffer, key: 0, warp: None, env: Vec::new() }
     }
 
     pub fn with_warp(mut self, warp: ClipWarp) -> Self {
@@ -847,6 +850,9 @@ pub struct Graph {
     /// Samples everything comes out late by: the slowest track and return,
     /// and the master's effects.
     pub latency: u64,
+    /// Time signatures: (the beat a stretch of bars starts on, beats per
+    /// bar), in order. Empty: the transport's beats per bar throughout.
+    pub meters: Vec<(i64, i64)>,
 }
 
 impl Graph {
@@ -870,6 +876,7 @@ impl Graph {
             dry: block(),
             dry_comp: Delay::default(),
             latency: 0,
+            meters: Vec::new(),
         }
     }
 

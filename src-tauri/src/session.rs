@@ -52,12 +52,55 @@ const WARP_SENSITIVITY: u32 = 60;
 pub struct Pool {
     assets: HashMap<String, PoolAsset>,
     onsets: Mutex<OnsetCache>,
+    /// Audio made from an asset for clips that play it backwards or at
+    /// another pitch (cents), at the engine rate.
+    variants: Mutex<HashMap<(String, i32, bool), Arc<AudioBuffer>>>,
 }
+
+/// Variants kept at most before the ones no graph plays are let go.
+const VARIANTS_KEPT: usize = 8;
 
 impl Pool {
     pub fn insert(&mut self, id: String, asset: PoolAsset) {
-        lock(&self.onsets).retain(|(asset, _, _), _| *asset != id);
+        lock(&self.onsets).retain(|(asset, _, _), _| *asset != id && !asset.starts_with(&format!("{id}#")));
+        lock(&self.variants).retain(|(asset, _, _), _| *asset != id);
         self.assets.insert(id, asset);
+    }
+
+    /// The asset's audio as a clip plays it: as it is, shifted in pitch by
+    /// `cents` (same length), backwards, or both. Made once and kept while a
+    /// graph plays it.
+    pub fn variant(&self, id: &str, cents: i32, reverse: bool) -> Option<Arc<AudioBuffer>> {
+        let asset = self.assets.get(id)?;
+        if cents == 0 && !reverse {
+            return Some(Arc::clone(&asset.playback));
+        }
+        let mut cache = lock(&self.variants);
+        let key = (id.to_string(), cents, reverse);
+        if !cache.contains_key(&key) {
+            if cache.len() >= VARIANTS_KEPT {
+                cache.retain(|_, audio| Arc::strong_count(audio) > 1);
+            }
+            let mut audio = if cents == 0 { (*asset.playback).clone() } else { soniq_io::change_pitch(&asset.playback, f64::from(cents) / 100.0) };
+            if reverse {
+                audio.channels.iter_mut().for_each(|c| c.reverse());
+            }
+            cache.insert(key.clone(), Arc::new(audio));
+        }
+        cache.get(&key).cloned()
+    }
+
+    /// Every hit in a variant of an asset, for warping it in Beats mode.
+    pub fn variant_onsets(&self, id: &str, cents: i32, reverse: bool) -> Option<Arc<Vec<usize>>> {
+        if cents == 0 && !reverse {
+            return self.warp_onsets(id);
+        }
+        let audio = self.variant(id, cents, reverse)?;
+        let mut cache = lock(&self.onsets);
+        let found = cache
+            .entry((format!("{id}#{cents}#{reverse}"), WARP_SENSITIVITY, usize::MAX))
+            .or_insert_with(|| Arc::new(soniq_io::onsets(&audio, WARP_SENSITIVITY as f32 / 100.0, usize::MAX)));
+        Some(Arc::clone(found))
     }
 
     pub fn get(&self, id: &str) -> Option<&PoolAsset> {
@@ -477,6 +520,10 @@ impl AppState {
         }
         // Plugins that hold their sound back are made up for everywhere else.
         graph.compensate();
+        // The click's accents follow the time signatures.
+        if !project.meters.is_empty() {
+            graph.meters = project.meter_map().segments().iter().map(|s| (s.start.round() as i64, i64::from(s.beats_per_bar))).collect();
+        }
         graph
     }
 

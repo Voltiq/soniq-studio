@@ -7,6 +7,7 @@ import { create } from "zustand";
 import { backend } from "../engine/backend";
 import { engine, inTauri, type ClipState, type EngineStatus, type InputStatus } from "../engine/bridge";
 import { chainHost, createDevice, deviceSpec } from "./devices";
+import { meterOf, setSongMeters } from "./meter";
 import { editLabel } from "./edits";
 import { formatClock } from "./format";
 import { loadKeymap, saveKeymap, type Keymap } from "./keymap";
@@ -44,6 +45,7 @@ import {
   type MarkKind,
   type LibraryEntry,
   type LibraryView,
+  type EnvPoint,
   type TrackRole,
   type BatchOutput,
   type BatchProgress,
@@ -70,6 +72,7 @@ import {
   type Track,
   type TrackPatch,
   type ViewId,
+  snapBeats,
 } from "./types";
 
 /** What one export writes: the song, the loop, one file per region, or one per track. */
@@ -579,6 +582,18 @@ export interface Store {
   /** Shows or hides a track's automation lanes. */
   toggleAutomation(trackId: string): void;
   toggleTakes(trackId: string): void;
+  /** Plays audio clips backwards, or forwards again (the picked ones by default). */
+  reverseClips(ids?: string[]): void;
+  setClipTranspose(clip: string, semitones: number): void;
+  /** An audio clip's gain over time: breakpoints in beats from its start, in dB. */
+  setClipEnvelope(clip: string, points: EnvPoint[]): void;
+  /** A time signature from bar `bar` (0-based) on; null takes the change there away. */
+  setMeter(bar: number, beatsPerBar: number | null): void;
+  /** Moves a region with everything in it so it starts where `to` (beats) is now. */
+  moveSection(marker: string, to: number): void;
+  sectionToPlayhead(marker: string): void;
+  duplicateSection(marker: string): void;
+  deleteSection(marker: string): void;
   /** Comping: puts a stretch (beats) of a take on its track, over what is there. */
   compTake(trackId: string, lane: string, start: number, end: number): void;
   deleteTake(trackId: string, lane: string): void;
@@ -2707,6 +2722,32 @@ export const useStore = create<Store>((set, get) => {
     clearSlot: (track, scene) => void get().run({ op: "clearSlot", track, scene }),
 
     toggleTakes: (trackId) => set((s) => ({ takesOpen: { ...s.takesOpen, [trackId]: !s.takesOpen[trackId] } })),
+
+    reverseClips: (ids) => {
+      const s = get();
+      const all = s.project.tracks.flatMap((t) => t.clips);
+      const clips = (ids ?? s.pickedClips()).filter((id) => all.find((c) => c.id === id)?.kind === "audio");
+      if (clips.length) void s.run({ op: "reverseClips", clips });
+      else pushToast({ tone: "info", title: "Select an audio clip first", detail: "Only audio plays backwards." });
+    },
+    setClipTranspose: (clip, semitones) => void get().run({ op: "setClipTranspose", clip, semitones }),
+    setClipEnvelope: (clip, points) => void get().run({ op: "setClipEnvelope", clip, points }),
+    setMeter: (bar, beatsPerBar) => {
+      // The first bar has the song's own time signature.
+      if (bar === 0) {
+        if (beatsPerBar) get().setBeatsPerBar(beatsPerBar);
+        return;
+      }
+      void get().run({ op: "setMeter", bar, beatsPerBar });
+    },
+    moveSection: (marker, to) => void get().run({ op: "moveSection", marker, to }),
+    sectionToPlayhead: (marker) => {
+      const s = get();
+      const to = snapBeats(positionBeats(s), "bar", s.project.beatsPerBar);
+      void s.run({ op: "moveSection", marker, to });
+    },
+    duplicateSection: (marker) => void get().run({ op: "duplicateSection", marker }),
+    deleteSection: (marker) => void get().run({ op: "deleteSection", marker }),
     compTake: (track, lane, start, end) => void get().run({ op: "compTake", track, lane, start, end }),
     deleteTake: (track, lane) => void get().run({ op: "deleteTake", track, lane }),
     clearTakes: (track) => void get().run({ op: "clearTakes", track }),
@@ -2808,6 +2849,12 @@ export const useStore = create<Store>((set, get) => {
     setEngineStatus: (engineStatus) => set({ engineStatus }),
     setInputStatus: (inputStatus) => set({ inputStatus }),
   };
+});
+
+// The bar lines of the open song, for snapping to bars and the bar counter.
+setSongMeters(meterOf(useStore.getState().project));
+useStore.subscribe((now, before) => {
+  if (now.project.meters !== before.project.meters || now.project.beatsPerBar !== before.project.beatsPerBar) setSongMeters(meterOf(now.project));
 });
 
 export function positionBeats(s: Pick<Store, "positionSec" | "project">): number {

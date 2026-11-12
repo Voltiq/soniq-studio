@@ -337,6 +337,32 @@ export const COMMANDS: Command[] = [
   },
   { id: "clip.split", label: "Split at playhead", menu: "Clip", group: 1, shortcut: "Ctrl+E", run: () => s().splitAtPlayhead() },
   {
+    id: "clip.reverse",
+    label: "Reverse",
+    menu: "Clip",
+    group: 1,
+    run: () => s().reverseClips(),
+    enabled: () => selectedClip()?.kind === "audio",
+    checked: () => {
+      const c = selectedClip();
+      return c?.kind === "audio" && !!c.reverse;
+    },
+  },
+  {
+    id: "clip.clearEnvelope",
+    label: "Clear the gain envelope",
+    menu: "Clip",
+    group: 1,
+    run: () => {
+      const c = selectedClip();
+      if (c) s().setClipEnvelope(c.id, []);
+    },
+    enabled: () => {
+      const c = selectedClip();
+      return c?.kind === "audio" && !!c.envelope?.length;
+    },
+  },
+  {
     id: "clip.duplicate",
     label: "Duplicate",
     menu: "Clip",

@@ -4,12 +4,14 @@
 //! `Project` is cheap to clone. That is what makes snapshot-based undo viable.
 
 pub mod catalog;
+mod meter;
 mod history;
 mod model;
 mod ops;
 mod tempo;
 
 pub use history::History;
+pub use meter::{MeterChange, MeterMap, MeterSegment};
 pub use model::*;
 pub use ops::{Applied, ChainPatch, Op, OpError, ReturnPatch, TrackPatch, apply, controller_op, place_takes, record_slot};
 pub use tempo::{MAX_BPM, MIN_BPM, TempoMap, TempoPoint, TempoSegment};

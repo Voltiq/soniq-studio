@@ -1,3 +1,4 @@
+import { songMeters } from "./meter";
 import { noteName } from "./music";
 import type { DeviceParam } from "./types";
 
@@ -65,8 +66,10 @@ export function formatClock(seconds: number): string {
 /** Beats → "bar. beat. sixteenth", 1-based like every DAW. */
 export function formatBars(beats: number, beatsPerBar: number): string {
   const b = Math.max(0, beats);
-  const bar = Math.floor(b / beatsPerBar) + 1;
-  const beat = Math.floor(b % beatsPerBar) + 1;
+  // With time-signature changes, the bar counter follows them.
+  const at = songMeters()?.barAt(b);
+  const bar = at ? at.bar + 1 : Math.floor(b / beatsPerBar) + 1;
+  const beat = at ? Math.floor(at.into) + 1 : Math.floor(b % beatsPerBar) + 1;
   const sixteenth = Math.floor((b % 1) * 4) + 1;
   return `${bar}. ${beat}. ${sixteenth}`;
 }

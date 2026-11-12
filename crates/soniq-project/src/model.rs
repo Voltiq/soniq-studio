@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::catalog;
+use crate::meter::{MeterChange, MeterMap};
 use crate::tempo::{TempoMap, TempoPoint};
 
 /// Bumped whenever the file format changes in a way that needs a migration.
@@ -36,6 +37,9 @@ pub struct Project {
     /// The tempo track; empty, the song plays at `bpm` throughout.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tempo: Vec<TempoPoint>,
+    /// Time-signature changes along the song (`beats_per_bar` covers its start).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub meters: Vec<MeterChange>,
     /// Saved mixes to go back to.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mixes: Vec<Mix>,
@@ -85,6 +89,11 @@ impl Project {
     /// Beats ↔ seconds, with the tempo track.
     pub fn tempo_map(&self) -> TempoMap {
         TempoMap::new(self.bpm, &self.tempo)
+    }
+
+    /// Where the bar lines fall.
+    pub fn meter_map(&self) -> MeterMap {
+        MeterMap::new(self.beats_per_bar, &self.meters)
     }
 }
 
@@ -293,6 +302,23 @@ pub struct TakeLane {
     pub clips: Vec<Clip>,
 }
 
+/// A breakpoint of a clip's gain envelope.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct EnvPoint {
+    /// Beats from the clip's start.
+    pub time: f64,
+    /// dB; −60 and below is silence.
+    pub gain: f64,
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
+}
+
 /// What an automation lane (or a modulator) moves.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -469,6 +495,16 @@ pub enum ClipContent {
         /// straight fades, equal-power crossfades.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         curve: Option<FadeCurve>,
+        /// Plays its stretch of the audio backwards.
+        #[serde(default, skip_serializing_if = "is_false")]
+        reverse: bool,
+        /// Pitch change in semitones; the length stays.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        transpose: f64,
+        /// Clip gain over time: breakpoints in beats from the clip's start,
+        /// joined by straight lines (in dB), holding before and after.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        envelope: Vec<EnvPoint>,
     },
     Midi {
         /// Length in beats.
@@ -559,7 +595,19 @@ impl Clip {
             id: crate::new_id("c"),
             name: name.into(),
             start,
-            content: ClipContent::Audio { asset: asset.into(), offset, duration, gain: 0.0, fade_in: 0.0, fade_out: 0.0, warp: None, curve: None },
+            content: ClipContent::Audio {
+                asset: asset.into(),
+                offset,
+                duration,
+                gain: 0.0,
+                fade_in: 0.0,
+                fade_out: 0.0,
+                warp: None,
+                curve: None,
+                reverse: false,
+                transpose: 0.0,
+                envelope: Vec::new(),
+            },
             slot: None,
             follow: None,
         }
@@ -904,6 +952,7 @@ impl Project {
             tempo: Vec::new(),
             mixes: Vec::new(),
             other_mix: None,
+            meters: Vec::new(),
         }
     }
 

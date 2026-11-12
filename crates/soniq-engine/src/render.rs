@@ -692,6 +692,7 @@ impl Renderer {
 
     fn render_clicks(&mut self, pos: u64, n: usize, offset: usize) {
         let beats_per_bar = i64::from(self.transport.beats_per_bar());
+        let meters = &self.graph.meters;
         let enabled = self.transport.metronome_enabled();
         // The beat lines in this stretch, found from the tempo track once per beat.
         let mut beat = self.tempo().beat_at(pos as f64).floor() as i64;
@@ -707,7 +708,7 @@ impl Renderer {
             if beat != self.last_beat {
                 // Only click on the exact boundary, so seeking mid-beat stays silent.
                 if enabled && p as f64 - line < 1.0 {
-                    self.metronome.trigger(beat.rem_euclid(beats_per_bar) == 0);
+                    self.metronome.trigger(downbeat(meters, beat, beats_per_bar));
                 }
                 self.last_beat = beat;
             }
@@ -973,6 +974,29 @@ fn play_out(
     }
 }
 
+/// Whether `beat` starts a bar: by the time signatures (each a start beat
+/// and its beats per bar), or `base` beats per bar when there are none.
+fn downbeat(meters: &[(i64, i64)], beat: i64, base: i64) -> bool {
+    match meters.iter().rev().find(|(start, _)| *start <= beat) {
+        Some((start, per_bar)) => (beat - start).rem_euclid((*per_bar).max(1)) == 0,
+        None => beat.rem_euclid(base.max(1)) == 0,
+    }
+}
+
+/// A clip's gain envelope `at` samples in: straight lines between its points.
+fn env_gain(points: &[(u64, f32)], at: u64) -> f32 {
+    let Some(&(first_at, first)) = points.first() else { return 1.0 };
+    if at <= first_at {
+        return first;
+    }
+    let next = points.partition_point(|(t, _)| *t <= at);
+    let (from_at, from) = points[next - 1];
+    match points.get(next) {
+        Some(&(to_at, to)) => from + (to - from) * ((at - from_at) as f32 / (to_at - from_at).max(1) as f32),
+        None => from,
+    }
+}
+
 /// A clip's level over its length: gain, fades and crossfades.
 #[derive(Clone, Copy)]
 struct Envelope {
@@ -1041,13 +1065,14 @@ fn mix_clip(clip: &mut ClipNode, pos: u64, out_l: &mut [f32], out_r: &mut [f32],
     let within = s - clip.start;
     let dst = (s - pos) as usize;
     let env = Envelope::of(clip);
+    let points = clip.env.as_slice();
     if let Some(warp) = clip.warp.as_deref_mut() {
         let count = (e - s) as usize;
         let clock = ClipClock { timing, start_beat: warp.start_beat, per_beat: warp.per_beat, offset: clip.offset as f64 };
         let ClipWarp { warper, left: wl, right: wr, .. } = warp;
         warper.render(&clip.buffer, &clock, s, &mut wl[..count], &mut wr[..count]);
         for i in 0..count {
-            let g = env.at(within + i as u64);
+            let g = env.at(within + i as u64) * env_gain(points, within + i as u64);
             out_l[dst + i] += wl[i] * g;
             out_r[dst + i] += wr[i] * g;
         }
@@ -1056,7 +1081,7 @@ fn mix_clip(clip: &mut ClipNode, pos: u64, out_l: &mut [f32], out_r: &mut [f32],
     let src = (clip.offset + within) as usize;
     let count = ((e - s) as usize).min(left.len().saturating_sub(src));
     for i in 0..count {
-        let g = env.at(within + i as u64);
+        let g = env.at(within + i as u64) * env_gain(points, within + i as u64);
         out_l[dst + i] += left[src + i] * g;
         out_r[dst + i] += right[src + i] * g;
     }
@@ -1090,6 +1115,32 @@ mod tests {
 
     fn constant_clip(start: u64, len: u64, value: f32) -> ClipNode {
         ClipNode::new(start, len, 0, Arc::new(AudioBuffer::new(1000, vec![vec![value; len as usize]])))
+    }
+
+    #[test]
+    fn a_clip_gain_envelope_shapes_the_clip() {
+        // Full level for 20 samples, down to half by sample 60, held to the end.
+        let mut clip = constant_clip(10, 100, 1.0);
+        clip.env = vec![(20, 1.0), (60, 0.5)];
+        let (mut r, t) = setup(graph_with(vec![clip], [1.0, 1.0]));
+        r.prime();
+        t.set_playing(true);
+        r.render_block(128);
+        let out = r.output(128).0;
+        assert_eq!(out[9], 0.0);
+        assert!((out[10] - 1.0).abs() < 1e-6 && (out[30] - 1.0).abs() < 1e-6);
+        assert!((out[50] - 0.75).abs() < 1e-3, "half way down: {}", out[50]);
+        assert!((out[70] - 0.5).abs() < 1e-6 && (out[109] - 0.5).abs() < 1e-6);
+        assert_eq!(out[110], 0.0);
+    }
+
+    #[test]
+    fn downbeats_follow_the_time_signatures() {
+        // 4 beats a bar, then 3 from beat 8 on.
+        let meters = [(0, 4), (8, 3)];
+        let bars: Vec<i64> = (0..16).filter(|b| downbeat(&meters, *b, 4)).collect();
+        assert_eq!(bars, [0, 4, 8, 11, 14]);
+        assert_eq!((0..9).filter(|b| downbeat(&[], *b, 3)).collect::<Vec<i64>>(), [0, 3, 6]);
     }
 
     #[test]

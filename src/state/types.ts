@@ -1,3 +1,4 @@
+import { songMeters, type MeterChange } from "./meter";
 /*
  * The project model, mirroring soniq-project (Rust) field for field. The Rust
  * side owns the project; the UI receives it after every change.
@@ -58,6 +59,18 @@ export interface AudioClip extends ClipBase {
   warp?: Warp;
   /** The shape of the fades and crossfades; absent is the standard (straight fades, equal-power crossfades). */
   curve?: FadeCurve;
+  /** Plays its stretch of the audio backwards. */
+  reverse?: boolean;
+  /** Pitch change in semitones; the length stays. */
+  transpose?: number;
+  /** Clip gain over time: breakpoints in beats from the clip's start, straight lines (in dB) between. */
+  envelope?: EnvPoint[];
+}
+
+/** A breakpoint of a clip's gain envelope: beats from the clip's start, dB (−60 is silence). */
+export interface EnvPoint {
+  time: number;
+  gain: number;
 }
 
 export type FadeCurve = "linear" | "equalPower" | "sCurve";
@@ -423,6 +436,8 @@ export interface Project {
   launchQuantize: number;
   /** The tempo track; empty, the song plays at `bpm` throughout. */
   tempo?: TempoPoint[];
+  /** Time-signature changes along the song (`beatsPerBar` covers its start). */
+  meters?: MeterChange[];
   /** Saved mixes to go back to. */
   mixes?: Mix[];
   /** While comparing two mixes (A/B): the one not playing, named "A" or "B". */
@@ -537,6 +552,13 @@ export type Op =
   | { op: "setTrackGroup"; track: string; group: string | null }
   | { op: "putInSlot"; clip: string; scene: number }
   | { op: "clearSlot"; track: string; scene: number }
+  | { op: "reverseClips"; clips: string[] }
+  | { op: "setClipTranspose"; clip: string; semitones: number }
+  | { op: "setClipEnvelope"; clip: string; points: EnvPoint[] }
+  | { op: "setMeter"; bar: number; beatsPerBar: number | null }
+  | { op: "moveSection"; marker: string; to: number }
+  | { op: "duplicateSection"; marker: string }
+  | { op: "deleteSection"; marker: string }
   | { op: "compTake"; track: string; lane: string; start: number; end: number }
   | { op: "deleteTake"; track: string; lane: string }
   | { op: "clearTakes"; track: string }
@@ -812,6 +834,9 @@ const SNAP_BEATS: Record<Snap, number> = { bar: 4, beat: 1, "1/8": 0.5, "1/16": 
 
 /** `beats` on the arrangement's grid. */
 export function snapBeats(beats: number, snap: Snap, beatsPerBar: number): number {
+  // With time-signature changes, bars are not all one length: the nearest bar line.
+  const meters = snap === "bar" ? songMeters() : null;
+  if (meters) return meters.nearestBar(beats);
   const step = snap === "bar" ? beatsPerBar : SNAP_BEATS[snap];
   return step ? Math.round(beats / step) * step : beats;
 }
