@@ -249,6 +249,10 @@ export interface Store {
   folded: string[];
   /** Tracks whose automation lanes show, with the lanes asked for that have no points yet. */
   automationOpen: Record<string, AutoTarget[]>;
+  /** Tracks whose take lanes show. */
+  takesOpen: Record<string, boolean>;
+  /** Session view: the slot being recorded into (stopping: waiting for the bar line). */
+  recordingSlot: { track: string; scene: number; stopping: boolean } | null;
   /** The tempo lane under the markers: shown or hidden by hand, or null to show it when the song has tempo changes. */
   tempoLane: boolean | null;
   /** How each plugin device's plugin is doing, by device id. */
@@ -574,6 +578,15 @@ export interface Store {
   toggleFold(group: string): void;
   /** Shows or hides a track's automation lanes. */
   toggleAutomation(trackId: string): void;
+  toggleTakes(trackId: string): void;
+  /** Comping: puts a stretch (beats) of a take on its track, over what is there. */
+  compTake(trackId: string, lane: string, start: number, end: number): void;
+  deleteTake(trackId: string, lane: string): void;
+  clearTakes(trackId: string): void;
+  /** Records the track (armed or not) into a session slot; again stops at the bar line. */
+  recordSlot(trackId: string, scene: number): Promise<void>;
+  /** Writes a scene's clips into the arrangement at the bar the playhead is on. */
+  sceneToArrangement(scene: number): void;
   /** Shows the lane for `target` on its track, empty if it has no points yet. */
   showAutomation(trackId: string, target: AutoTarget): void;
   /** Hides a lane; a lane with points keeps them. */
@@ -752,7 +765,7 @@ export const useStore = create<Store>((set, get) => {
   const resetForNewSong = () => {
     get().setPlaying(false);
     get().seekBeats(0);
-    set({ clipStates: {}, editorSelection: null, selectedClipId: null, clipSelection: [], trackSelection: [], folded: [], automationOpen: {}, tempoLane: null });
+    set({ clipStates: {}, editorSelection: null, selectedClipId: null, clipSelection: [], trackSelection: [], folded: [], automationOpen: {}, takesOpen: {}, tempoLane: null });
   };
 
   /** Outside the desktop app nothing reports launches: the session plays them at once. */
@@ -846,6 +859,8 @@ export const useStore = create<Store>((set, get) => {
     trackSelection: [],
     folded: [],
     automationOpen: {},
+    takesOpen: {},
+    recordingSlot: null,
     tempoLane: null,
     pluginStatus: {},
     pluginLatencyMs: 0,
@@ -994,16 +1009,53 @@ export const useStore = create<Store>((set, get) => {
     },
 
     stopRecording: async (keepPlaying) => {
+      const slot = get().recordingSlot;
+      if (slot) {
+        if (slot.stopping) return;
+        // Into a slot: it stops on the next bar line (or the one just passed), so the clip loops in time.
+        const at = get();
+        const bar = at.project.beatsPerBar;
+        const played = positionBeats(at) - (at.recordStartBeats ?? positionBeats(at));
+        const bars = Math.max(1, Math.ceil(played / bar - 0.1));
+        const waitBeats = Math.max(0, bars * bar - played);
+        set({ recordingSlot: { ...slot, stopping: true } });
+        // A little over, so the audio heard late (the round trip) is all in.
+        await new Promise((done) => window.setTimeout(done, ((waitBeats * 60) / tempoOf(at.project).bpmAt(positionBeats(at))) * 1000 + 350));
+        if (!get().recording) return;
+      }
       const s = get();
       const start = s.recordStartBeats ?? positionBeats(s);
       const end = s.punch ? Math.min(positionBeats(s), s.loop.end) : positionBeats(s);
       const seconds = beatsToSec(end, s.project) - beatsToSec(start, s.project);
       anchor(s.positionSec);
       countInUntil = 0;
-      set({ recording: false, recordStartBeats: null, playing: keepPlaying && s.playing });
+      set({ recording: false, recordStartBeats: null, recordingSlot: null, playing: keepPlaying && s.playing });
       engine.setLoop(s.loop.enabled, beatsToSec(s.loop.start, s.project), beatsToSec(s.loop.end, s.project));
       const reply = await withReply("Saving the recording…", () => backend.recordStop(keepPlaying), "Recording failed");
       const clips = (p: Project) => p.tracks.reduce((n, t) => n + t.clips.length, 0);
+      if (reply && slot) {
+        const track = reply.project.tracks.find((t) => t.id === slot.track);
+        const made = track?.clips.find((c) => c.slot === slot.scene);
+        if (made && !s.project.tracks.some((t) => t.clips.some((c) => c.id === made.id))) {
+          pushToast({ tone: "success", title: `Recorded into ${track?.name ?? "the slot"}`, detail: "Whole bars long, so it loops in time." });
+          // It plays on from the next line of the launch grid.
+          if (get().playing) get().launchSlot(slot.track, slot.scene);
+        }
+        return;
+      }
+      // Passes round the loop became takes: show them under their tracks.
+      const takes = (p: Project, id: string) => p.tracks.find((t) => t.id === id)?.takes?.length ?? 0;
+      const withTakes = reply ? reply.project.tracks.filter((t) => takes(reply.project, t.id) > takes(s.project, t.id)) : [];
+      if (reply && withTakes.length) {
+        const count = takes(reply.project, withTakes[0].id) - takes(s.project, withTakes[0].id);
+        set((now) => ({ takesOpen: { ...now.takesOpen, ...Object.fromEntries(withTakes.map((t) => [t.id, true])) }, view: "arrange" }));
+        pushToast({
+          tone: "success",
+          title: `Recorded ${count} takes`,
+          detail: `Under ${withTakes.map((t) => t.name).join(", ")}: swipe across a take to put that stretch on the track.`,
+        });
+        return;
+      }
       if (reply && clips(reply.project) > clips(s.project) && seconds > 0.05) {
         const names = reply.project.tracks.filter((t) => t.arm).map((t) => t.name);
         pushToast({
@@ -2653,6 +2705,44 @@ export const useStore = create<Store>((set, get) => {
 
     putInSlot: (clip, scene) => void get().run({ op: "putInSlot", clip, scene }),
     clearSlot: (track, scene) => void get().run({ op: "clearSlot", track, scene }),
+
+    toggleTakes: (trackId) => set((s) => ({ takesOpen: { ...s.takesOpen, [trackId]: !s.takesOpen[trackId] } })),
+    compTake: (track, lane, start, end) => void get().run({ op: "compTake", track, lane, start, end }),
+    deleteTake: (track, lane) => void get().run({ op: "deleteTake", track, lane }),
+    clearTakes: (track) => void get().run({ op: "clearTakes", track }),
+
+    recordSlot: async (trackId, scene) => {
+      const s = get();
+      if (s.recording) return s.stopRecording(true);
+      if (!inTauri) {
+        pushToast({ tone: "info", title: "Recording needs the desktop app", detail: "Run npm run tauri dev." });
+        return;
+      }
+      const countIn = s.countIn && !s.playing;
+      try {
+        await backend.recordStart(countIn, null, s.midiRecordMode, null, [trackId, scene]);
+      } catch (err) {
+        fail("Could not start recording")(err);
+        return;
+      }
+      // The take runs straight on: the loop would send the playhead back under it.
+      engine.setLoop(false, 0, 0);
+      const now = get();
+      anchor(now.positionSec);
+      if (countIn) countInUntil = performance.now() + ((s.project.beatsPerBar * 60) / tempoOf(s.project).bpmAt(positionBeats(now))) * 1000;
+      set({ recording: true, playing: true, recordStartBeats: positionBeats(now), recordingSlot: { track: trackId, scene, stopping: false } });
+    },
+
+    sceneToArrangement: (scene) => {
+      const s = get();
+      const bar = s.project.beatsPerBar;
+      const at = Math.max(0, Math.round(positionBeats(s) / bar) * bar);
+      const before = s.project;
+      void s.run({ op: "sceneToArrangement", scene, at }).then(() => {
+        if (get().project === before) return;
+        pushToast({ tone: "success", title: `${s.project.scenes[scene] ?? "The scene"} is in the arrangement`, detail: `From bar ${Math.round(at / bar) + 1}, as long as its longest clip.` });
+      });
+    },
     setFollow: (clip, follow) => void get().run({ op: "setFollow", clip, follow }),
     setLaunchQuantize: (beats) => void get().run({ op: "setLaunchQuantize", beats }),
     addScene: () => void get().run({ op: "addScene" }),

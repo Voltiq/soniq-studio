@@ -56,7 +56,7 @@ function SlotProgress({ trackId, lengthBeats }: { trackId: string; lengthBeats: 
 
 function SlotMenu({ track, scene, clip, anchor, onClose }: { track: Track; scene: number; clip: Clip | undefined; anchor: HTMLElement; onClose: () => void }) {
   const selected = useStore((s) => track.clips.find((c) => c.id === s.selectedClipId));
-  const { launchSlot, stopTrack, newSlotClip, putInSlot, clearSlot, openPianoRoll, selectClip, setView } = useStore.getState();
+  const { launchSlot, stopTrack, newSlotClip, putInSlot, clearSlot, openPianoRoll, selectClip, setView, recordSlot } = useStore.getState();
   const item = (label: string, run: () => void) => (
     <button
       type="button"
@@ -86,6 +86,7 @@ function SlotMenu({ track, scene, clip, anchor, onClose }: { track: Track; scene
         </>
       ) : (
         <>
+          {item(track.kind === "midi" ? "Record notes here" : "Record here", () => void recordSlot(track.id, scene))}
           {track.kind === "midi" && item("New MIDI clip", () => void newSlotClip(track.id, scene))}
           {selected && selected.slot !== scene && item(`Put “${selected.name}” here`, () => putInSlot(selected.id, scene))}
           {item(`Stop ${track.name}`, () => stopTrack(track.id))}
@@ -100,13 +101,48 @@ function SlotCell({ track, scene, state, sceneName }: { track: Track; scene: num
   const tempo = useStore((s) => loopTempo(s.project));
   const selected = useStore((s) => !!clip && s.selectedClipId === clip.id);
   const [menu, setMenu] = useState<HTMLElement | null>(null);
-  const { launchSlot, stopTrack, selectClip, newSlotClip, openPianoRoll, setView } = useStore.getState();
+  const { launchSlot, stopTrack, selectClip, newSlotClip, openPianoRoll, setView, recordSlot, stopRecording } = useStore.getState();
+  const taking = useStore((s) => (s.recordingSlot?.track === track.id && s.recordingSlot.scene === scene ? s.recordingSlot : null));
+  const busy = useStore((s) => s.recording);
   const playing = state?.playing === scene;
   const queued = state?.queued === scene;
   const onMenu = (e: MouseEvent<HTMLElement>) => {
     e.preventDefault();
     setMenu(e.currentTarget);
   };
+  if (taking) {
+    return (
+      <button
+        type="button"
+        className={`slot recording${taking.stopping ? " stopping" : ""}`}
+        aria-label={`Recording into this slot on ${track.name}. Stops at the next bar line.`}
+        title="Click to stop at the next bar line"
+        disabled={taking.stopping}
+        onClick={() => void stopRecording(true)}
+      >
+        <span className="rec-dot" aria-hidden="true" />
+        <span className="slot-name">{taking.stopping ? "To the bar…" : "Recording"}</span>
+      </button>
+    );
+  }
+  // An armed track's empty slots record: click one to start, click it again to stop on the bar.
+  if (!clip && track.arm && !busy) {
+    return (
+      <>
+        <button
+          type="button"
+          className="slot empty armed"
+          aria-label={`Record into this slot, ${track.name}, scene ${sceneName}`}
+          title="Click to record here · right-click for more"
+          onClick={() => void recordSlot(track.id, scene)}
+          onContextMenu={onMenu}
+        >
+          <span className="rec-dot" aria-hidden="true" />
+        </button>
+        {menu && <SlotMenu track={track} scene={scene} clip={undefined} anchor={menu} onClose={() => setMenu(null)} />}
+      </>
+    );
+  }
   if (!clip) {
     return (
       <>
@@ -268,7 +304,8 @@ export function SessionView() {
   const quantize = useStore((s) => s.project.launchQuantize);
   const bpb = useStore((s) => s.project.beatsPerBar);
   const recording = useStore((s) => s.recording);
-  const { launchScene, stopTrack, stopAllClips, selectTrack, backToArrangement, setLaunchQuantize, addScene } = useStore.getState();
+  const { launchScene, stopTrack, stopAllClips, selectTrack, backToArrangement, setLaunchQuantize, addScene, sceneToArrangement } = useStore.getState();
+  const [sceneMenu, setSceneMenu] = useState<{ scene: number; anchor: HTMLElement } | null>(null);
   // Group tracks play what their tracks send them: they have no clips of their own.
   const tracks = allTracks.filter((t) => t.kind !== "group");
   const groupName = (t: Track) => (t.group ? allTracks.find((g) => g.id === t.group)?.name : undefined);
@@ -339,7 +376,17 @@ export function SessionView() {
             {tracks.map((t) => (
               <SlotCell key={t.id} track={t} scene={si} sceneName={scene} state={states[t.id]} />
             ))}
-            <button type="button" className="scene" onClick={() => launchScene(si)} aria-label={`Launch scene ${scene}`}>
+            <button
+              type="button"
+              className="scene"
+              onClick={() => launchScene(si)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setSceneMenu({ scene: si, anchor: e.currentTarget });
+              }}
+              aria-label={`Launch scene ${scene}`}
+              title="Click to launch · right-click to write it into the arrangement"
+            >
               <Icon name="play" size={11} />
               <span>{scene}</span>
               <span className="scene-n">{si + 1}</span>
@@ -373,6 +420,36 @@ export function SessionView() {
           <span>Scene</span>
         </button>
       </div>
+      {sceneMenu && (
+        <Popover anchor={sceneMenu.anchor} onClose={() => setSceneMenu(null)} label="Scene" align="right">
+          <button
+            type="button"
+            role="menuitem"
+            className="mi"
+            onClick={() => {
+              const scene = sceneMenu.scene;
+              setSceneMenu(null);
+              launchScene(scene);
+            }}
+          >
+            <span className="mi-check" />
+            <span className="mi-label">Launch</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="mi"
+            onClick={() => {
+              const scene = sceneMenu.scene;
+              setSceneMenu(null);
+              sceneToArrangement(scene);
+            }}
+          >
+            <span className="mi-check" />
+            <span className="mi-label">Write to the arrangement at the playhead</span>
+          </button>
+        </Popover>
+      )}
       <ClipPanel />
     </div>
   );

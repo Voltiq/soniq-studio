@@ -7844,3 +7844,103 @@ button.select.sbox[aria-expanded="true"] .i.sbox-chev {
   font-size: 10px;
   color: var(--warning);
 }
+
+/* ---------- Takes and comping ---------- */
+
+.take-row {
+  background: color-mix(in oklab, var(--surface-1) 55%, var(--bg-2, transparent));
+}
+
+.take-head {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.take-head .tcolor {
+  background: transparent;
+}
+
+.take-top {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.take-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.take-lane {
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.take-clip {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--c) 9%, var(--surface-2));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--c) 22%, transparent);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* The stretches of a take that play on the track. */
+.take-used {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--c) 26%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--c);
+  pointer-events: none;
+}
+
+.take-swipe {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent-soft);
+  box-shadow: inset 1px 0 0 var(--accent), inset -1px 0 0 var(--accent);
+  pointer-events: none;
+}
+
+.tg.takes[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+/* ---------- Recording into session slots ---------- */
+
+.slot.empty.armed .rec-dot {
+  opacity: 0.55;
+}
+
+.slot.empty.armed:hover .rec-dot {
+  opacity: 1;
+}
+
+.slot.recording {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: var(--text-1);
+  background: color-mix(in oklab, var(--danger) 16%, var(--surface-2));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger) 55%, transparent);
+}
+
+.slot.recording.stopping {
+  opacity: 0.75;
+}

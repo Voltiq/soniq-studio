@@ -314,6 +314,12 @@ function reduce(p: Project, op: Op): { project: Project; label: string; created?
     case "duplicateClips":
     case "extractToTrack":
       throw new Error("Moving and copying several clips needs the desktop app (npm run tauri dev).");
+    case "compTake":
+    case "deleteTake":
+    case "clearTakes":
+      throw new Error("Takes are recorded and comped in the desktop app (npm run tauri dev).");
+    case "sceneToArrangement":
+      throw new Error("Writing a scene into the arrangement needs the desktop app (npm run tauri dev).");
     case "deleteClip": {
       const name = p.tracks.flatMap((t) => t.clips).find((c) => c.id === op.clip)?.name;
       if (!name) throw new Error("That clip no longer exists.");

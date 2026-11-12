@@ -15,6 +15,7 @@ import { positionBeats, tempoLaneShown, useStore } from "../state/store";
 import { beatAfter, clipSeconds, tempoOf, type TempoMap } from "../state/tempo";
 import { clipLength, projectLength, snapBeats, timelineClips, type Clip, type FadeCurve, type Track } from "../state/types";
 import { AutomationRow, shownLanes } from "./AutomationLane";
+import { TakeLanes } from "./TakeLanes";
 import { TempoRow } from "./TempoLane";
 
 export const HEADER_W = 224;
@@ -508,7 +509,8 @@ function TrackMenu({ track, anchor, onClose }: { track: Track; anchor: HTMLEleme
   const tracks = useStore((s) => s.project.tracks);
   const picked = useStore((s) => s.trackSelection);
   const shown = useStore((s) => s.automationOpen[track.id] !== undefined);
-  const { groupTracks, ungroup, setTrackGroup, toggleAutomation, removeTrack, freezeTrack, unfreezeTrack, flattenTrack } = useStore.getState();
+  const takesShown = useStore((s) => s.takesOpen[track.id] ?? false);
+  const { groupTracks, ungroup, setTrackGroup, toggleAutomation, removeTrack, freezeTrack, unfreezeTrack, flattenTrack, toggleTakes, clearTakes } = useStore.getState();
   const groups = tracks.filter((t) => t.kind === "group" && t.id !== track.group);
   const pickable = (picked.includes(track.id) ? picked : [track.id]).filter((id) => tracks.find((t) => t.id === id)?.kind !== "group");
   const item = (label: string, run: () => void, key?: string) => (
@@ -536,6 +538,8 @@ function TrackMenu({ track, anchor, onClose }: { track: Track; anchor: HTMLEleme
         {track.kind !== "group" && groups.map((g) => <div key={g.id}>{item(`Move into ${g.name}`, () => setTrackGroup(track.id, g.id))}</div>)}
         <div className="msep" role="separator" />
         {item(shown ? "Hide automation" : "Show automation", () => toggleAutomation(track.id))}
+        {!!track.takes?.length && item(takesShown ? "Hide takes" : `Show takes (${track.takes.length})`, () => toggleTakes(track.id))}
+        {!!track.takes?.length && item("Delete the takes", () => clearTakes(track.id))}
         {track.kind !== "group" && <div className="msep" role="separator" />}
         {track.kind !== "group" && !track.frozen && item(`Freeze ${track.name}`, () => void freezeTrack(track.id))}
         {track.frozen && item(`Unfreeze ${track.name}`, () => unfreezeTrack(track.id))}
@@ -555,6 +559,8 @@ function TrackHeader({ track, selected }: { track: Track; selected: boolean }) {
   const members = useStore((s) => (track.kind === "group" ? s.project.tracks.filter((t) => t.group === track.id).length : 0));
   const groupColor = useStore((s) => (track.group ? s.project.tracks.find((t) => t.id === track.group)?.color : undefined));
   const automation = useStore((s) => s.automationOpen[track.id] !== undefined);
+  const takesShown = useStore((s) => s.takesOpen[track.id] ?? false);
+  const takeCount = track.takes?.length ?? 0;
   const [menu, setMenu] = useState<HTMLElement | null>(null);
   const instrument = track.devices.find((d) => d.role === "instrument")?.name;
   const pct = ((track.volume + 60) / 66) * 100;
@@ -614,6 +620,18 @@ function TrackHeader({ track, selected }: { track: Track; selected: boolean }) {
           >
             <Icon name="automation" size={13} />
           </button>
+          {takeCount > 0 && (
+            <button
+              className="tg takes"
+              type="button"
+              aria-pressed={takesShown}
+              aria-label={`${takesShown ? "Hide" : "Show"} the ${takeCount} takes of ${track.name}`}
+              title={`${takeCount} takes: swipe across one to put that stretch on the track`}
+              onClick={() => useStore.getState().toggleTakes(track.id)}
+            >
+              {takeCount}
+            </button>
+          )}
           <input
             className="range mini"
             type="range"
@@ -684,7 +702,7 @@ function TrackRow({ track, laneWidth }: { track: Track; laneWidth: number }) {
   const selectedClip = useStore((s) => s.selectedClipId);
   const clipSelection = useStore((s) => s.clipSelection);
   const pxPerBeat = useStore((s) => s.pxPerBeat);
-  const recordingHere = useStore((s) => s.recording && track.arm);
+  const recordingHere = useStore((s) => s.recording && track.arm && !s.recordingSlot);
   const tempo = useStore((s) => tempoOf(s.project));
   const clips = useMemo(() => timelineClips(track), [track]);
   const overlaps = useMemo(() => crossfades(clips, tempo), [clips, tempo]);
@@ -755,6 +773,7 @@ function TrackRow({ track, laneWidth }: { track: Track; laneWidth: number }) {
         {recordingHere && <RecordingRegion pxPerBeat={pxPerBeat} />}
       </div>
     </div>
+    <TakeLanes track={track} laneWidth={laneWidth} />
     {lanes.map((target, i) => (
       <AutomationRow key={JSON.stringify(target)} track={track} target={target} laneWidth={laneWidth} last={i === lanes.length - 1} />
     ))}

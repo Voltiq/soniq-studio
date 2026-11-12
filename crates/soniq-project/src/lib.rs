@@ -11,7 +11,7 @@ mod tempo;
 
 pub use history::History;
 pub use model::*;
-pub use ops::{Applied, ChainPatch, Op, OpError, ReturnPatch, TrackPatch, apply, controller_op, record_slot};
+pub use ops::{Applied, ChainPatch, Op, OpError, ReturnPatch, TrackPatch, apply, controller_op, place_takes, record_slot};
 pub use tempo::{MAX_BPM, MIN_BPM, TempoMap, TempoPoint, TempoSegment};
 
 use std::sync::atomic::{AtomicU64, Ordering};

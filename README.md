@@ -62,6 +62,12 @@ Releases are built by GitHub Actions from a version tag: see [RELEASING.md](RELE
   or gate can listen to another track (Sidechain), so the bass ducks under the kick; a vocoder can speak
   through another track (Carrier track, with Carrier set to "Sidechain track"). In the mixer, click a
   return's or the master's name to open its chain.
+- **Takes and comping.** Record with the loop on and every pass round it is kept as a take under the
+  track. Swipe across a stretch of a take to put it on the track (short fades at the joins), or use a
+  whole take; the parts that play are lit.
+- **Session recording.** An armed track's empty slots are record buttons (or right-click any empty
+  slot › Record here): the clip stops on the bar line, loops in time and plays on. Right-click a scene to
+  write its clips into the arrangement at the playhead.
 - **Linear-phase EQ.** The Equalizer's Phase choice switches to a linear-phase filter: the same curve
   with no frequency shifted in time, for mastering and parallel tracks. Its delay (107 ms at 48 kHz) is
   made up for on every other track and cut from exports.

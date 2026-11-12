@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::{
     Asset, AutoPoint, AutoTarget, AutomationLane, Chain, ChainOwner, Clip, ClipContent, ControllerMapping, Device, DeviceParam, DeviceRole, FollowAction, History,
-    MAX_BPM, MIN_BPM, MODULATOR_TYPES, MappingTarget, Marker, Monitor, Note, PLUGIN_TYPE, ParamRef, Project, SIDECHAIN_TYPES, SampleRef, TempoMap, TempoPoint, Track,
+    MAX_BPM, MIN_BPM, MODULATOR_TYPES, MappingTarget, Marker, Monitor, Note, PLUGIN_TYPE, ParamRef, Project, SIDECHAIN_TYPES, SampleRef, TakeLane, TempoMap, TempoPoint, Track,
     TrackKind, TrackRole, Warp, FadeCurve, find_device_mut,
 };
 
@@ -207,6 +207,14 @@ pub enum Op {
     /// Copies a timeline clip into a scene's slot on its track, replacing what is there.
     PutInSlot { clip: String, scene: usize },
     ClearSlot { track: String, scene: usize },
+    /// Comping: puts a stretch (beats) of a take on the track's timeline, over what is there.
+    CompTake { track: String, lane: String, start: f64, end: f64 },
+    DeleteTake { track: String, lane: String },
+    /// Removes every take of the track; the timeline keeps what was comped.
+    ClearTakes { track: String },
+    /// Writes a scene's clips into the arrangement at `at` (beats), each
+    /// repeated for as long as the scene's longest clip.
+    SceneToArrangement { scene: usize, at: f64 },
     /// What a session clip does after it has played a while (`None`: keeps looping).
     SetFollow {
         clip: String,
@@ -1201,6 +1209,78 @@ fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
             project.prune_assets();
             Ok(label("Clear slot".into()))
         }
+        Op::CompTake { track, lane, start, end } => {
+            let tempo = project.tempo_map();
+            let track = track_mut(project, &track)?;
+            let li = track.takes.iter().position(|l| l.id == lane).ok_or_else(|| OpError::Invalid("That take no longer exists.".into()))?;
+            let (from, to) = (start.min(end).max(0.0), start.max(end));
+            let pieces: Vec<Clip> = track.takes[li]
+                .clips
+                .iter()
+                .filter_map(|c| {
+                    let (s, e) = (c.start.max(from), c.end(&tempo).min(to));
+                    (e - s >= MIN_CLIP_BEATS).then(|| {
+                        let mut piece = c.clone();
+                        piece.id = crate::new_id("c");
+                        trim(&mut piece, s, e - s, &tempo, None);
+                        piece
+                    })
+                })
+                .collect();
+            if pieces.is_empty() {
+                return Err(OpError::Invalid("Nothing was recorded there on that take.".into()));
+            }
+            let name = track.takes[li].name.clone();
+            for mut piece in pieces {
+                let (s, e) = (piece.start, piece.end(&tempo));
+                clear_range(track, s, e, &tempo);
+                // A few milliseconds of fade on each side of a join, so it never clicks.
+                soften(&mut piece, true, true);
+                for c in track.clips.iter_mut().filter(|c| c.slot.is_none()) {
+                    let (cs, ce) = (c.start, c.end(&tempo));
+                    if (ce - s).abs() < 1e-6 {
+                        soften(c, false, true);
+                    }
+                    if (cs - e).abs() < 1e-6 {
+                        soften(c, true, false);
+                    }
+                }
+                track.clips.push(piece);
+            }
+            track.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
+            Ok(label(format!("Comp from {name}")))
+        }
+        Op::DeleteTake { track, lane } => {
+            let track = track_mut(project, &track)?;
+            let li = track.takes.iter().position(|l| l.id == lane).ok_or_else(|| OpError::Invalid("That take no longer exists.".into()))?;
+            let removed = track.takes.remove(li);
+            project.prune_assets();
+            Ok(label(format!("Delete {}", removed.name)))
+        }
+        Op::ClearTakes { track } => {
+            let track = track_mut(project, &track)?;
+            if track.takes.is_empty() {
+                return Err(OpError::Invalid(format!("{} has no takes", track.name)));
+            }
+            track.takes.clear();
+            let name = track.name.clone();
+            project.prune_assets();
+            Ok(label(format!("Delete the takes of {name}")))
+        }
+        Op::SceneToArrangement { scene, at } => {
+            let tempo = project.tempo_map();
+            let at = at.max(0.0);
+            let with: Vec<(String, f64)> = project.tracks.iter().filter_map(|t| t.slot(scene).map(|c| (t.id.clone(), c.length_beats(&tempo)))).collect();
+            let longest = with.iter().map(|(_, len)| *len).fold(0.0, f64::max);
+            if longest < MIN_CLIP_BEATS {
+                return Err(OpError::Invalid("That scene has no clips.".into()));
+            }
+            for (track, _) in &with {
+                record_slot(project, track, scene, at, at + longest, 0.0);
+            }
+            let name = project.scenes.get(scene).cloned().unwrap_or_else(|| format!("Scene {}", scene + 1));
+            Ok(label(format!("{name} to the arrangement")))
+        }
         Op::SetFollow { clip, follow } => {
             let (ti, ci) = project.find_clip(&clip).ok_or(OpError::NoClip(clip))?;
             let c = &mut project.tracks[ti].clips[ci];
@@ -1388,6 +1468,47 @@ fn clear_range(track: &mut Track, from: f64, to: f64, tempo: &TempoMap) {
         }
     }
     track.clips = kept;
+}
+
+/// Seconds of fade where comped pieces meet.
+const COMP_FADE: f64 = 0.005;
+
+/// At least a short fade at an audio clip's start and/or end.
+fn soften(clip: &mut Clip, start: bool, end: bool) {
+    if let ClipContent::Audio { fade_in, fade_out, duration, .. } = &mut clip.content {
+        let fade = COMP_FADE.min(*duration / 4.0);
+        if start {
+            *fade_in = fade_in.max(fade);
+        }
+        if end {
+            *fade_out = fade_out.max(fade);
+        }
+    }
+}
+
+/// Loop recording: keeps every pass round the loop (`passes`, in the order
+/// played) as a take lane under the track, and puts one on its timeline over
+/// what was there: the last pass, or the one before it when the last was cut
+/// short (under half the loop, `full` beats). Returns how many takes were added.
+pub fn place_takes(project: &mut Project, track: &str, passes: Vec<Clip>, full: f64) -> usize {
+    let tempo = project.tempo_map();
+    let Some(track) = project.track_mut(track) else { return 0 };
+    let Some(last) = passes.len().checked_sub(1) else { return 0 };
+    let pick = if last == 0 || passes[last].length_beats(&tempo) >= 0.5 * full { last } else { last - 1 };
+    // Numbered on from the highest take the track has (deleted ones leave gaps).
+    let taken = track.takes.iter().filter_map(|l| l.name.strip_prefix("Take ")?.parse::<usize>().ok()).max().unwrap_or(0);
+    for (i, clip) in passes.into_iter().enumerate() {
+        if i == pick {
+            let (s, e) = (clip.start, clip.end(&tempo));
+            clear_range(track, s, e, &tempo);
+            let mut main = clip.clone();
+            main.id = crate::new_id("c");
+            track.clips.push(main);
+        }
+        track.takes.push(TakeLane { id: crate::new_id("tk"), name: format!("Take {}", taken + i + 1), clips: vec![clip] });
+    }
+    track.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
+    last + 1
 }
 
 /// Writes the session clip in `scene`'s slot into the arrangement from
@@ -1773,6 +1894,75 @@ mod tests {
         assert_eq!(project.tracks[2].devices[0].pad_chains.len(), 1);
         history.undo(&mut project);
         assert_eq!(project.tracks[2].devices[0].pad_chains.len(), 2);
+    }
+
+    #[test]
+    fn loop_takes_are_kept_and_comped_from() {
+        // 60 BPM: a beat is a second. A 10 s recording over a 4-beat loop at beat 4: a
+        // first pass from beat 4, a second, and a third cut short after one beat.
+        let (mut project, old) = song_with_audio_clip();
+        let mut history = History::new();
+        let track = project.tracks[0].id.clone();
+        let pass = |offset: f64, len: f64| Clip::audio("Take", "a1", 4.0, offset, len);
+        assert_eq!(place_takes(&mut project, &track, vec![pass(0.0, 4.0), pass(4.0, 4.0), pass(8.0, 1.0)], 4.0), 3);
+        let t = &project.tracks[0];
+        assert_eq!(t.takes.iter().map(|l| l.name.as_str()).collect::<Vec<_>>(), ["Take 1", "Take 2", "Take 3"]);
+        // The second pass plays (the third was cut short), over the clip that was there.
+        assert!(t.clips.iter().all(|c| c.id != old));
+        let offset_of = |c: &Clip| match c.content {
+            ClipContent::Audio { offset, .. } => offset,
+            _ => unreachable!(),
+        };
+        assert_eq!(t.clips.iter().map(|c| (c.start, offset_of(c))).collect::<Vec<_>>(), [(4.0, 4.0)]);
+
+        // Swipe beats 5–6 of Take 1 into the comp: three pieces, joined with short fades.
+        let lane = t.takes[0].id.clone();
+        apply(&mut project, &mut history, Op::CompTake { track: track.clone(), lane: lane.clone(), start: 6.0, end: 5.0 }).unwrap();
+        let t = &project.tracks[0];
+        assert_eq!(t.clips.iter().map(|c| (c.start, offset_of(c))).collect::<Vec<_>>(), [(4.0, 4.0), (5.0, 1.0), (6.0, 6.0)]);
+        let fades = |c: &Clip| match c.content {
+            ClipContent::Audio { fade_in, fade_out, .. } => (fade_in, fade_out),
+            _ => unreachable!(),
+        };
+        assert_eq!(t.clips.iter().map(fades).collect::<Vec<_>>(), [(0.0, 0.005), (0.005, 0.005), (0.005, 0.0)]);
+        assert_eq!(history.undo_label(), Some("Comp from Take 1"));
+        assert!(apply(&mut project, &mut history, Op::CompTake { track: track.clone(), lane: lane.clone(), start: 20.0, end: 24.0 }).is_err(), "nothing recorded there");
+
+        // The takes keep the recording alive without the timeline; without them it goes.
+        for id in project.tracks[0].clips.iter().map(|c| c.id.clone()).collect::<Vec<_>>() {
+            apply(&mut project, &mut history, Op::DeleteClip { clip: id }).unwrap();
+        }
+        assert!(project.asset("a1").is_some());
+        apply(&mut project, &mut history, Op::DeleteTake { track: track.clone(), lane }).unwrap();
+        assert_eq!(project.tracks[0].takes.len(), 2);
+        apply(&mut project, &mut history, Op::ClearTakes { track: track.clone() }).unwrap();
+        assert!(project.asset("a1").is_none());
+        history.undo(&mut project);
+        assert_eq!(project.tracks[0].takes.len(), 2);
+        // More takes carry on numbering.
+        place_takes(&mut project, &track, vec![pass(0.0, 4.0), pass(4.0, 4.0)], 4.0);
+        assert_eq!(project.tracks[0].takes.last().unwrap().name, "Take 5");
+    }
+
+    #[test]
+    fn a_scene_goes_into_the_arrangement_as_long_as_its_longest_clip() {
+        let mut project = Project::empty("Song");
+        let mut history = History::new();
+        let (a, b) = (project.tracks[2].id.clone(), project.tracks[3].id.clone());
+        let mut add = |track: &String, length| {
+            apply(&mut project, &mut history, Op::AddMidiClip { track: track.clone(), start: 0.0, length, notes: vec![], name: None, slot: Some(0) }).unwrap();
+        };
+        add(&a, 4.0);
+        add(&b, 8.0);
+        assert!(apply(&mut project, &mut history, Op::SceneToArrangement { scene: 3, at: 0.0 }).is_err());
+        apply(&mut project, &mut history, Op::SceneToArrangement { scene: 0, at: 8.0 }).unwrap();
+        let timeline = |i: usize| project.tracks[i].clips.iter().filter(|c| c.slot.is_none()).map(|c| c.start).collect::<Vec<_>>();
+        assert_eq!(timeline(2), [8.0, 12.0], "the short clip twice");
+        assert_eq!(timeline(3), [8.0]);
+        // The scene's own clips stay in their slots; one undo step takes the copies away.
+        assert!(project.tracks[2].slot(0).is_some());
+        history.undo(&mut project);
+        assert!(project.tracks[2].clips.iter().all(|c| c.slot.is_some()));
     }
 
     #[test]

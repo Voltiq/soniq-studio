@@ -275,9 +275,22 @@ pub struct Track {
     /// the start of the song), played instead while the devices rest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frozen: Option<String>,
+    /// Recorded passes kept beside the timeline, to comp from.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub takes: Vec<TakeLane>,
     /// Podcast mode: a speaker (levelled) or music (ducked under the speakers).
     #[serde(default, skip_serializing_if = "TrackRole::is_none")]
     pub role: TrackRole,
+}
+
+/// One pass of a loop recording, kept under its track. Its clips never play
+/// themselves: comping copies stretches of them onto the track's timeline.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TakeLane {
+    pub id: String,
+    pub name: String,
+    pub clips: Vec<Clip>,
 }
 
 /// What an automation lane (or a modulator) moves.
@@ -398,6 +411,7 @@ impl Track {
             automation: Vec::new(),
             group: None,
             frozen: None,
+            takes: Vec::new(),
             role: TrackRole::None,
         }
     }
@@ -1039,7 +1053,8 @@ impl Project {
 
     /// Drops asset entries that no clip or device refers to any more.
     pub fn prune_assets(&mut self) {
-        let clips = self.tracks.iter().flat_map(|t| t.clips.iter().filter_map(|c| c.asset()));
+        let takes = self.tracks.iter().flat_map(|t| t.takes.iter().flat_map(|l| l.clips.iter().filter_map(|c| c.asset())));
+        let clips = self.tracks.iter().flat_map(|t| t.clips.iter().filter_map(|c| c.asset())).chain(takes);
         let samples = self
             .tracks
             .iter()

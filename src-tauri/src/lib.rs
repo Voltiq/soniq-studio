@@ -73,6 +73,8 @@ pub fn run() {
                 started: Instant::now(),
                 punch: Mutex::new(None),
                 pass: Mutex::new(None),
+                record_loop: Mutex::new(None),
+                record_slot: Mutex::new(None),
                 noise_profile: Mutex::new(None),
                 engine_config: Mutex::new(config),
                 dirs,

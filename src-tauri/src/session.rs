@@ -228,6 +228,10 @@ pub struct AppState {
     pub punch: Mutex<Option<(f64, f64)>>,
     /// Sketch mode: the loop (seconds) whose next full pass the recording keeps.
     pub pass: Mutex<Option<(f64, f64)>>,
+    /// Loop recording: the loop (seconds) whose passes become takes.
+    pub record_loop: Mutex<Option<(f64, f64)>>,
+    /// Session view: the slot (track, scene) the recording goes into instead of the timeline.
+    pub record_slot: Mutex<Option<(String, usize)>>,
     /// Learned by "Get noise profile"; kept across projects, like Audacity.
     pub noise_profile: Mutex<Option<NoiseProfile>>,
     pub engine_config: Mutex<EngineConfig>,

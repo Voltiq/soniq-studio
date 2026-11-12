@@ -135,7 +135,8 @@ export interface Backend {
   closing(): Promise<void>;
   /** `punch` is the range in seconds that keeps what is played inside it; `midiMode` how MIDI lands on existing clips. */
   /** `pass` (sketch mode): keep one pass round this loop range, in seconds. */
-  recordStart(countIn: boolean, punch: [number, number] | null, midiMode: MidiRecordMode, pass?: [number, number] | null): Promise<void>;
+  /** `slot` (track, scene): that track alone records, into that session slot. */
+  recordStart(countIn: boolean, punch: [number, number] | null, midiMode: MidiRecordMode, pass?: [number, number] | null, slot?: [string, number] | null): Promise<void>;
   /** Turns what was just played on a keyboard into a clip. */
   midiCapture(): Promise<ProjectReply>;
   recordStop(keepPlaying: boolean): Promise<ProjectReply>;
@@ -281,7 +282,7 @@ const desktop: Backend = {
   restoreRecovery: () => invoke("recovery_restore"),
   discardRecovery: () => invoke("recovery_discard"),
   closing: () => invoke("app_closing"),
-  recordStart: (countIn, punch, midiMode, pass) => invoke("record_start", { countIn, punch, midiMode, pass: pass ?? null }),
+  recordStart: (countIn, punch, midiMode, pass, slot) => invoke("record_start", { countIn, punch, midiMode, pass: pass ?? null, slot: slot ?? null }),
   midiCapture: () => invoke("midi_capture"),
   recordStop: (keepPlaying) => invoke("record_stop", { keepPlaying }),
   orphanedRecordings: () => invoke("recordings_orphaned"),

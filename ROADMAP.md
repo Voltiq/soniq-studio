@@ -168,7 +168,7 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 - [x] **P0** Punch in and out at the loop range, with one bar of pre-roll; recording stops by itself after the punch-out point
 - [x] **P0** Recording latency compensation: takes move earlier by the round trip the driver reports, plus a manual offset in the audio settings; the file keeps the whole take so the clip edge can be dragged back
 - [x] **P0** Monitoring when the input and output run at different sample rates, or on two devices whose clocks drift apart (Phase 7A)
-- [ ] **P1** Loop recording into take lanes and comping (swipe to comp)
+- [x] **P1** Loop recording into take lanes and comping (swipe to comp), for audio (Phase 8 Part B)
 - [x] **P1** MIDI recording onto every armed MIDI track at once (with count-in and punch); notes held by the sustain pedal last until it lifts; the new clip layers over what is already there
 - [x] **P1** MIDI recording modes (Transport menu): a new clip, overdub into the clip under the playhead, or replace its notes in the recorded range; with the loop on, every pass is folded into the loop range
 - [x] **P1** Capture MIDI (`Ctrl+Shift+C` or the Capture button): turns what you just played into a clip on the armed (or selected) MIDI tracks, even without recording; at its song position if the transport was running, else bar-aligned at the playhead
@@ -200,7 +200,7 @@ Dependencies and the engine/IO crates build at `opt-level = 2` even in dev, beca
 - [x] **P1** Launch clips and scenes with quantisation (none, 1/16 … 8 bars), sample-accurately; clips loop; a launched or stopped track leaves the arrangement until "Back to arrangement"; launching starts the transport and stopping it stops the session
 - [x] **P1** Follow actions: after a number of bars, play the next, previous, first, last, any or any other clip, play it again, or stop
 - [ ] **P1** Launch modes (trigger, gate, toggle, repeat), legato
-- [ ] **P1** Record into empty slots; capture a scene into the arrangement
+- [x] **P1** Record into empty slots; write a scene into the arrangement (Phase 8 Part B)
 - [x] **P1** Arrangement record of a live session performance: press record and every clip the session plays is written into the arrangement (one copy per loop), over what was there
 - [ ] **P2** Clip launching from MIDI controllers (Launchpad-style grid mapping)
 
@@ -574,9 +574,13 @@ Every P0 is done after Part A. The rest of this phase takes the P1 items people 
 - [x] Rust tests (256 in total) now also cover the linear EQ's curve (a bell at +12 dB, a low cut at −3 dB on its corner and under −40 dB two octaves down), an impulse coming out symmetric about the reported delay, a rebuild keeping the sound in flight, and two tracks with the same click landing on one sample when one has the linear EQ
 - [ ] Not tried yet: listening. Checked in the desktop app (silent): Phase set to Linear on an EQ shows 107 ms; the Mixer opens with the devices folded and no strip cut off; the arrangement keeps its devices open
 
-**Part B — takes** (§5.2, §5.4)
-- [ ] Loop recording into take lanes, and comping: swipe across takes to choose what plays
-- [ ] Record into empty session slots; capture a playing scene into the arrangement
+**Part B ✅ — takes** (§5.2, §5.4)
+- [x] Loop recording makes takes: with the loop on, an audio recording that goes round it more than once is kept whole in one file, and every pass becomes a take lane under its track (Take 1, Take 2, …; the first keeps any run-up before the loop, the last may be cut short). The last pass goes on the track, over what was there, or the one before it when the last stopped under half way. One undo step ("Record takes"); the lanes open by themselves
+- [x] Comping: swipe across a stretch of a take (on the grid; Alt ignores it) and it replaces that stretch on the track, with 5 ms fades where pieces meet so joins never click; double-click or Use takes the whole take. The stretches of each take that play are lit on it. A take can be deleted, or all of a track's takes at once (the comp stays); the recording stays in the song while any take or clip uses it. The count on the track header (and the track's menu) shows and hides the lanes
+- [x] Recording into session slots: an armed track's empty slots are record buttons, and any audio or MIDI track's empty slot has "Record here" in its menu (that track alone records, armed or not, and what is played goes to it). Stopping waits for the next bar line (or takes the one just passed), so the clip is whole bars long and loops in time; it then plays on from the launch grid. The loop, punch and the session-to-arrangement write are off for it. One undo step
+- [x] A scene into the arrangement: right-click a scene, "Write to the arrangement at the playhead": every clip of the scene lands at the bar the playhead is on, over what was there, each repeated for as long as the scene's longest clip. One undo step; the session keeps its clips
+- [x] Rust tests (260 in total) now also cover a loop recording split into its passes (from the loop's start, with a run-up, with the round-trip delay, begun past the loop), takes placed and numbered, a swipe comped into three pieces with their fades, a recording kept alive by its takes alone, slot clips trimmed to whole bars (audio and notes), and a scene written out with its short clip repeated
+- [ ] Not tried yet: recording audio (the checks never open the microphone), so loop takes from a real recording and an audio slot recording are untested end to end; MIDI loop recording still merges into one clip rather than making takes. Checked in the desktop app (silent): a song given two takes by hand shows them under its track with the playing one lit; a swipe over one beat makes three pieces and lights both takes; Use and two undos; an armed track's empty slots turn into record buttons; a slot recording on a muted MIDI track with two notes played from the interface makes a one-bar clip in that slot (another track was selected), nothing on the timeline, queued to play; Scene 1's clips written at bar 3
 
 **Part C — clips and the arrangement** (§5.3)
 - [ ] Clip gain envelopes, reverse, clip-level pitch and stretch

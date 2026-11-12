@@ -709,6 +709,8 @@ pub fn input_status(state: State<'_, AppState>) -> InputStatus {
 /// input, MIDI from the keyboards, and the session's clips into the
 /// arrangement. With a count-in, one bar of clicks plays before the playhead
 /// moves. With a punch range (seconds), only what is played inside it is kept.
+/// With the loop on, every pass round it becomes a take. With a `slot` (track,
+/// scene), that track alone records, armed or not, into that session slot.
 #[tauri::command]
 pub fn record_start(
     state: State<'_, AppState>,
@@ -716,6 +718,7 @@ pub fn record_start(
     punch: Option<(f64, f64)>,
     midi_mode: Option<crate::midi::MidiRecordMode>,
     pass: Option<(f64, f64)>,
+    slot: Option<(String, usize)>,
 ) -> CmdResult<()> {
     let (audio, midi, bpm, beats_per_bar, session_clips) = {
         let session = lock(&state.session);
@@ -725,11 +728,19 @@ pub fn record_start(
         // The count-in plays at the tempo where recording starts.
         let tempo = project.tempo_map();
         let bpm = tempo.bpm_at(tempo.beats_at(state.engine.transport().position_seconds()));
-        (armed(TrackKind::Audio), armed(TrackKind::Midi), bpm, project.beats_per_bar, session_clips)
+        let (audio, midi) = match slot.as_ref().map(|(id, _)| (id, project.track(id).map(|t| t.kind))) {
+            Some((id, Some(TrackKind::Audio))) => (vec![id.clone()], Vec::new()),
+            Some((id, Some(TrackKind::Midi))) => (Vec::new(), vec![id.clone()]),
+            Some(_) => return Err("Pick a slot on an audio or MIDI track to record into.".into()),
+            None => (armed(TrackKind::Audio), armed(TrackKind::Midi)),
+        };
+        (audio, midi, bpm, project.beats_per_bar, session_clips)
     };
     if audio.is_empty() && midi.is_empty() && !session_clips {
         return Err("Arm a track first: press the record dot on its header.".into());
     }
+    // Into a slot: the whole take, whatever the punch and loop are set to.
+    let (punch, pass) = if slot.is_some() { (None, None) } else { (punch, pass) };
     if !audio.is_empty() {
         if !state.recorder.is_open() {
             state.open_input()?;
@@ -743,15 +754,27 @@ pub fn record_start(
     let transport = state.engine.transport();
     // With the loop on (and no punch), every pass round the loop is recorded into it.
     let (looping, loop_start, loop_end) = transport.loop_range();
-    let loop_range = (looping && punch.is_none() && loop_end > loop_start).then_some((loop_start, loop_end));
+    let loop_range = (looping && punch.is_none() && slot.is_none() && loop_end > loop_start).then_some((loop_start, loop_end));
+    *lock(&state.record_loop) = loop_range.filter(|_| pass.is_none());
     *lock(&state.midi_take) = (!midi.is_empty()).then(|| MidiTake {
         start: transport.position_seconds(),
         tracks: midi,
         events: Vec::new(),
         loop_range,
-        mode: midi_mode.unwrap_or_default(),
+        mode: if slot.is_some() { crate::midi::MidiRecordMode::New } else { midi_mode.unwrap_or_default() },
     });
-    state.begin_session_take();
+    // A slot recording stays in the session; anything else also writes what the session plays.
+    if slot.is_none() {
+        state.begin_session_take();
+    }
+    // What is played goes to the slot's track while it records, armed or not.
+    if let Some((id, _)) = slot.as_ref().filter(|_| lock(&state.midi_take).is_some()) {
+        let mut routing = lock(&state.midi_routing);
+        if !routing.armed.iter().any(|(armed, _)| armed == id) {
+            routing.armed.push((id.clone(), soniq_engine::track_key(id)));
+        }
+    }
+    *lock(&state.record_slot) = slot;
 
     if count_in && !transport.is_playing() {
         let samples = f64::from(beats_per_bar) * 60.0 / bpm * f64::from(state.engine.sample_rate());
@@ -804,6 +827,63 @@ pub(crate) fn place_pass(start: f64, length: f64, latency: f64, (a, b): (f64, f6
     (keep > 0.05).then_some((a, skip, keep))
 }
 
+/// Loop recording: the passes round the loop `a..b` (seconds) of a take that
+/// began at `start`, each as (timeline start, seconds into the take, seconds
+/// kept). The first runs from where recording began to the loop's end (with
+/// any run-up before the loop); the rest start at the loop's start; the last
+/// may be cut short. Empty if recording began past the loop.
+pub(crate) fn split_passes(start: f64, length: f64, latency: f64, (a, b): (f64, f64)) -> Vec<(f64, f64, f64)> {
+    let heard = start - latency;
+    let mut skip = (-heard).max(0.0);
+    let mut at = heard.max(0.0);
+    if at >= b - 0.01 || b - a < 0.05 {
+        return Vec::new();
+    }
+    let mut passes = Vec::new();
+    while length - skip > 0.05 {
+        passes.push((at, skip, (b - at).min(length - skip)));
+        skip += b - at;
+        at = a;
+    }
+    passes
+}
+
+/// A recording as a session clip: whole bars long, so it loops in time. Audio
+/// keeps the nearest whole bars it holds (the bars that fit, if it stopped
+/// short of them); MIDI runs to the end of the bar it stopped in, or to the
+/// bar line it stopped just after.
+pub(crate) fn slot_clip(mut clip: Clip, bpm: f64, beats_per_bar: u32) -> Clip {
+    let bar_beats = f64::from(beats_per_bar.max(1));
+    match &mut clip.content {
+        soniq_project::ClipContent::Audio { duration, .. } => {
+            let bar = bar_beats * 60.0 / bpm.max(1.0);
+            let nearest = (*duration / bar).round() * bar;
+            let whole = if nearest <= *duration + 1e-6 { nearest } else { (*duration / bar).floor() * bar };
+            if whole >= bar - 1e-6 {
+                *duration = whole;
+            }
+        }
+        soniq_project::ClipContent::Midi { length, .. } => {
+            *length = (*length / bar_beats - 0.25).ceil().max(1.0) * bar_beats;
+        }
+    }
+    clip.start = 0.0;
+    clip
+}
+
+/// Puts a clip in a scene's slot on a track, replacing what is there.
+fn place_in_slot(project: &mut soniq_project::Project, track_id: &str, scene: usize, mut clip: Clip) {
+    while project.scenes.len() <= scene {
+        project.scenes.push(format!("Scene {}", project.scenes.len() + 1));
+    }
+    if let Some(track) = project.track_mut(track_id) {
+        clip.slot = Some(scene);
+        track.clips.retain(|c| c.slot != Some(scene));
+        track.clips.push(clip);
+    }
+    project.prune_assets();
+}
+
 /// Stops recording and turns the takes into one clip per armed track.
 #[tauri::command]
 pub async fn record_stop(state: State<'_, AppState>, keep_playing: bool) -> CmdResult<ProjectReply> {
@@ -818,11 +898,19 @@ pub async fn record_stop(state: State<'_, AppState>, keep_playing: bool) -> CmdR
     let track_ids = std::mem::take(&mut *lock(&state.record_tracks));
     let punch = lock(&state.punch).take();
     let pass = lock(&state.pass).take();
+    let loop_range = lock(&state.record_loop).take();
+    let slot = lock(&state.record_slot).take();
+    if slot.is_some() {
+        // Notes go to the armed tracks alone again.
+        let session = lock(&state.session);
+        let armed = session.project.tracks.iter().filter(|t| t.arm && t.kind == TrackKind::Midi);
+        lock(&state.midi_routing).armed = armed.map(|t| (t.id.clone(), soniq_engine::track_key(&t.id))).collect();
+    }
     let tempo = lock(&state.session).project.tempo_map();
 
     let mut warnings = Vec::new();
     let audio = match take {
-        Some(take) => audio_take_clips(&state, take, &track_ids, punch, pass, &mut warnings)?,
+        Some(take) => audio_take_clips(&state, take, &track_ids, punch, pass, loop_range, &mut warnings)?,
         None => Vec::new(),
     };
     let midi = midi_take.as_ref().and_then(|t| crate::midi::midi_take_notes(t, stop_seconds, &tempo, punch).map(|found| (t.tracks.clone(), t.mode, found)));
@@ -837,19 +925,49 @@ pub async fn record_stop(state: State<'_, AppState>, keep_playing: bool) -> CmdR
         reply.warnings = warnings;
         return Ok(reply);
     }
-    for (track_id, asset, pooled, clip) in audio {
-        if let Some(track) = session.project.track_mut(&track_id) {
-            track.clips.push(clip);
-        }
+    let (bpm, beats_per_bar) = (session.project.bpm, session.project.beats_per_bar);
+    let loop_beats = loop_range.map_or(0.0, |(a, b)| tempo.beats_at(b) - tempo.beats_at(a));
+    let mut takes = 0;
+    for (track_id, asset, pooled, mut clips) in audio {
         session.pool.insert(asset.id.clone(), pooled);
         session.project.assets.push(asset);
+        match &slot {
+            Some((_, scene)) => {
+                if let Some(clip) = clips.pop() {
+                    place_in_slot(&mut session.project, &track_id, *scene, slot_clip(clip, bpm, beats_per_bar));
+                }
+            }
+            // Several passes round the loop: each a take, one of them on the timeline.
+            None if clips.len() > 1 => takes += soniq_project::place_takes(&mut session.project, &track_id, clips, loop_beats),
+            None => {
+                if let Some(track) = session.project.track_mut(&track_id) {
+                    track.clips.extend(clips);
+                }
+            }
+        }
     }
     if let Some((tracks, mode, (start, length, notes))) = midi {
         for id in tracks {
-            crate::midi::place_midi_take(&mut session.project, &id, start, length, notes.clone(), mode);
+            match &slot {
+                Some((_, scene)) => {
+                    let name = session.project.track(&id).map_or_else(|| "Take".to_string(), |t| format!("{} take", t.name));
+                    let clip = Clip::midi(name, 0.0, length, notes.clone());
+                    place_in_slot(&mut session.project, &id, *scene, slot_clip(clip, bpm, beats_per_bar));
+                }
+                None => {
+                    crate::midi::place_midi_take(&mut session.project, &id, start, length, notes.clone(), mode);
+                }
+            }
         }
     }
-    session.history.record(before, "Record", None);
+    let what = if slot.is_some() {
+        "Record into a slot"
+    } else if takes > 0 {
+        "Record takes"
+    } else {
+        "Record"
+    };
+    session.history.record(before, what, None);
     session.mark_changed();
     state.sync_engine(session);
     let mut reply = state.reply(session);
@@ -857,27 +975,42 @@ pub async fn record_stop(state: State<'_, AppState>, keep_playing: bool) -> CmdR
     Ok(reply)
 }
 
-/// Splits an audio take into one file and clip per armed track.
+/// What a recording left for one track: its id, the file, the audio ready to
+/// play, and its clips (one, or one per pass round the loop).
+type TrackTake = (String, Asset, PoolAsset, Vec<Clip>);
+
+/// Splits an audio take into one file per armed track, with its clip: or its
+/// clips, one per pass, when it went round the loop more than once.
 fn audio_take_clips(
     state: &AppState,
     take: soniq_engine::Take,
     track_ids: &[String],
     punch: Option<(f64, f64)>,
     pass: Option<(f64, f64)>,
+    loop_range: Option<(f64, f64)>,
     warnings: &mut Vec<String>,
-) -> CmdResult<Vec<(String, Asset, PoolAsset, Clip)>> {
+) -> CmdResult<Vec<TrackTake>> {
     let raw = soniq_io::decode_file(&take.path).map_err(|e| e.to_string())?;
     // What was heard came late by the device and by the plugins' compensation too.
     let latency = state.recorder.latency() + state.engine.output_latency() + state.engine.plugin_latency() + lock(&state.engine_config).record_offset_ms / 1000.0;
-    let placed = match pass {
-        Some(range) => place_pass(take.start_seconds, raw.duration(), latency, range),
-        None => place_take(take.start_seconds, raw.duration(), latency, punch),
+    let passes = match (pass, punch, loop_range) {
+        (None, None, Some(range)) => split_passes(take.start_seconds, raw.duration(), latency, range),
+        _ => Vec::new(),
     };
-    let Some((start_sec, skip, keep)) = placed else {
+    let placed: Vec<(f64, f64, f64)> = if passes.len() > 1 {
+        passes
+    } else {
+        let one = match pass {
+            Some(range) => place_pass(take.start_seconds, raw.duration(), latency, range),
+            None => place_take(take.start_seconds, raw.duration(), latency, punch),
+        };
+        one.into_iter().collect()
+    };
+    if placed.is_empty() {
         let _ = std::fs::remove_file(&take.path);
         warnings.push(if pass.is_some() { "The recording stopped before the loop came round to its start." } else { "Nothing was recorded inside the punch range." }.into());
         return Ok(Vec::new());
-    };
+    }
 
     // Where the per-track files go: the project's Samples folder once it has one.
     let (dir, plan, tempo) = {
@@ -914,14 +1047,16 @@ fn audio_take_clips(
     // The per-track files hold everything now; the raw take is no longer needed.
     let _ = std::fs::remove_file(&take.path);
 
-    // The files keep the whole take; the clip shows the part that belongs
+    // The files keep the whole take; each clip shows the part that belongs
     // (drag its edges to reveal the rest).
-    let start = tempo.beats_at(start_sec);
     Ok(made
         .into_iter()
         .map(|(track_id, asset, pooled)| {
-            let clip = Clip::audio(asset.name.clone(), asset.id.clone(), start, skip, keep.min(asset.duration() - skip));
-            (track_id, asset, pooled, clip)
+            let clips = placed
+                .iter()
+                .map(|&(start_sec, skip, keep)| Clip::audio(asset.name.clone(), asset.id.clone(), tempo.beats_at(start_sec), skip, keep.min(asset.duration() - skip)))
+                .collect();
+            (track_id, asset, pooled, clips)
         })
         .collect())
 }
@@ -1128,7 +1263,9 @@ pub struct MeterFrame {
 
 #[cfg(test)]
 mod tests {
-    use super::{place_pass, place_take};
+    use soniq_project::Clip;
+
+    use super::{place_pass, place_take, slot_clip, split_passes};
 
     #[test]
     fn a_sketch_keeps_one_pass_round_the_loop() {
@@ -1152,6 +1289,38 @@ mod tests {
         let (start, skip, keep) = place_take(0.0, 5.0, 0.02, None).unwrap();
         assert_eq!(start, 0.0);
         assert!((skip - 0.02).abs() < 1e-9 && (keep - 4.98).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_loop_recording_splits_into_its_passes() {
+        // A 2 s loop at 4–6 s; recording began at its start and ran 5 s: two passes and half a third.
+        assert_eq!(split_passes(4.0, 5.0, 0.0, (4.0, 6.0)), [(4.0, 0.0, 2.0), (4.0, 2.0, 2.0), (4.0, 4.0, 1.0)]);
+        // Begun a second before the loop: the first take has the run-up.
+        assert_eq!(split_passes(3.0, 5.5, 0.0, (4.0, 6.0)), [(3.0, 0.0, 3.0), (4.0, 3.0, 2.0), (4.0, 5.0, 0.5)]);
+        // What was heard came 20 ms late: every pass starts that much further into the take.
+        let late = split_passes(4.0, 4.5, 0.02, (4.0, 6.0));
+        assert!((late[0].0 - 3.98).abs() < 1e-9 && (late[0].2 - 2.02).abs() < 1e-9);
+        assert!((late[1].1 - 2.02).abs() < 1e-9 && late[1].0 == 4.0 && late[1].2 == 2.0);
+        // Begun past the loop, it never goes round.
+        assert!(split_passes(7.0, 5.0, 0.0, (4.0, 6.0)).is_empty());
+    }
+
+    #[test]
+    fn slot_recordings_are_whole_bars_long() {
+        let length = |c: &Clip| match c.content {
+            soniq_project::ClipContent::Audio { duration, .. } => duration,
+            soniq_project::ClipContent::Midi { length, .. } => length,
+        };
+        // 120 BPM in 4/4: a bar is 2 s. Stopped a little after two bars: two bars.
+        assert_eq!(length(&slot_clip(Clip::audio("a", "a1", 7.0, 0.1, 4.3), 120.0, 4)), 4.0);
+        // Stopped short of the second bar: the one bar it holds.
+        assert_eq!(length(&slot_clip(Clip::audio("a", "a1", 7.0, 0.0, 3.2), 120.0, 4)), 2.0);
+        // Less than a bar stays as it is.
+        assert_eq!(length(&slot_clip(Clip::audio("a", "a1", 7.0, 0.0, 1.5), 120.0, 4)), 1.5);
+        // Notes: to the end of the bar, or back to the bar line just passed.
+        assert_eq!(length(&slot_clip(Clip::midi("m", 3.0, 5.5, vec![]), 120.0, 4)), 8.0);
+        assert_eq!(length(&slot_clip(Clip::midi("m", 3.0, 8.4, vec![]), 120.0, 4)), 8.0);
+        assert_eq!(slot_clip(Clip::midi("m", 3.0, 0.5, vec![]), 120.0, 4).start, 0.0);
     }
 
     #[test]

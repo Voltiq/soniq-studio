@@ -354,8 +354,17 @@ export interface Track {
   group?: string;
   /** Frozen: the asset its clips and devices were rendered to, played instead while the devices rest. */
   frozen?: string;
+  /** Recorded passes kept beside the timeline, to comp from. */
+  takes?: TakeLane[];
   /** Podcast mode's role; absent means neither. */
   role?: TrackRole;
+}
+
+/** One pass of a loop recording, kept under its track; comping copies stretches of it onto the timeline. */
+export interface TakeLane {
+  id: string;
+  name: string;
+  clips: Clip[];
 }
 
 /** The clips on the timeline (not those waiting in session slots). */
@@ -528,6 +537,10 @@ export type Op =
   | { op: "setTrackGroup"; track: string; group: string | null }
   | { op: "putInSlot"; clip: string; scene: number }
   | { op: "clearSlot"; track: string; scene: number }
+  | { op: "compTake"; track: string; lane: string; start: number; end: number }
+  | { op: "deleteTake"; track: string; lane: string }
+  | { op: "clearTakes"; track: string }
+  | { op: "sceneToArrangement"; scene: number; at: number }
   | { op: "setFollow"; clip: string; follow: FollowAction | null }
   | { op: "setLaunchQuantize"; beats: number }
   | { op: "addScene" }
