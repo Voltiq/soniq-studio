@@ -76,6 +76,72 @@
     ]
   },
   {
+    "type": "wavetable",
+    "name": "Wavetable",
+    "role": "instrument",
+    "category": "instrument",
+    "description": "Two oscillators sweeping through tables of waveforms, with a modulation matrix",
+    "phase": 3,
+    "params": [
+      { "id": "tableA", "label": "Table", "min": 0, "max": 7, "default": 0, "unit": "", "step": 1, "options": ["Basic shapes", "Pulse width", "Harmonic sweep", "Vowels", "FM", "Sync", "Digital", "Organ"], "group": "Osc A" },
+      { "id": "posA", "label": "Position", "min": 0, "max": 100, "default": 60, "unit": "%", "group": "Osc A" },
+      { "id": "semiA", "label": "Pitch", "min": -24, "max": 24, "default": 0, "unit": "st", "bipolar": true, "step": 1, "group": "Osc A" },
+      { "id": "fineA", "label": "Fine", "min": -50, "max": 50, "default": 0, "unit": "ct", "bipolar": true, "group": "Osc A" },
+      { "id": "levelA", "label": "Level", "min": 0, "max": 100, "default": 100, "unit": "%", "group": "Osc A" },
+      { "id": "tableB", "label": "Table", "min": 0, "max": 7, "default": 2, "unit": "", "step": 1, "options": ["Basic shapes", "Pulse width", "Harmonic sweep", "Vowels", "FM", "Sync", "Digital", "Organ"], "group": "Osc B" },
+      { "id": "posB", "label": "Position", "min": 0, "max": 100, "default": 30, "unit": "%", "group": "Osc B" },
+      { "id": "semiB", "label": "Pitch", "min": -24, "max": 24, "default": 0, "unit": "st", "bipolar": true, "step": 1, "group": "Osc B" },
+      { "id": "fineB", "label": "Fine", "min": -50, "max": 50, "default": 0, "unit": "ct", "bipolar": true, "group": "Osc B" },
+      { "id": "levelB", "label": "Level", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Osc B" },
+      { "id": "filter", "label": "Filter", "min": 0, "max": 3, "default": 0, "unit": "", "step": 1, "options": ["LP 24", "LP 12", "Band", "HP"], "group": "Filter" },
+      { "id": "cutoff", "label": "Cutoff", "min": 40, "max": 18000, "default": 3000, "unit": "Hz", "log": true, "group": "Filter" },
+      { "id": "res", "label": "Resonance", "min": 0, "max": 100, "default": 20, "unit": "%", "group": "Filter" },
+      { "id": "drive", "label": "Drive", "min": 0, "max": 24, "default": 0, "unit": "dB", "group": "Filter" },
+      { "id": "attack", "label": "Attack", "min": 0.5, "max": 5000, "default": 4, "unit": "ms", "log": true, "group": "Amp envelope" },
+      { "id": "decay", "label": "Decay", "min": 1, "max": 5000, "default": 300, "unit": "ms", "log": true, "group": "Amp envelope" },
+      { "id": "sustain", "label": "Sustain", "min": 0, "max": 100, "default": 80, "unit": "%", "group": "Amp envelope" },
+      { "id": "release", "label": "Release", "min": 1, "max": 8000, "default": 280, "unit": "ms", "log": true, "group": "Amp envelope" },
+      { "id": "e2Attack", "label": "Attack", "min": 0.5, "max": 5000, "default": 2, "unit": "ms", "log": true, "group": "Envelope 2" },
+      { "id": "e2Decay", "label": "Decay", "min": 1, "max": 5000, "default": 500, "unit": "ms", "log": true, "group": "Envelope 2" },
+      { "id": "e2Sustain", "label": "Sustain", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Envelope 2" },
+      { "id": "e2Release", "label": "Release", "min": 1, "max": 8000, "default": 300, "unit": "ms", "log": true, "group": "Envelope 2" },
+      { "id": "lfo1Shape", "label": "Shape", "min": 0, "max": 4, "default": 0, "unit": "", "step": 1, "options": ["Sine", "Triangle", "Saw", "Square", "Random"], "group": "LFO 1" },
+      { "id": "lfo1Rate", "label": "Rate", "min": 0.05, "max": 30, "default": 2, "unit": "Hz", "log": true, "group": "LFO 1" },
+      { "id": "lfo2Shape", "label": "Shape", "min": 0, "max": 4, "default": 0, "unit": "", "step": 1, "options": ["Sine", "Triangle", "Saw", "Square", "Random"], "group": "LFO 2" },
+      { "id": "lfo2Rate", "label": "Rate", "min": 0.05, "max": 30, "default": 0.5, "unit": "Hz", "log": true, "group": "LFO 2" },
+      { "id": "unison", "label": "Unison", "min": 1, "max": 5, "default": 1, "unit": "", "step": 1, "group": "Voice" },
+      { "id": "spread", "label": "Spread", "min": 0, "max": 100, "default": 30, "unit": "%", "group": "Voice" },
+      { "id": "sub", "label": "Sub", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Voice" },
+      { "id": "noise", "label": "Noise", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Voice" },
+      { "id": "glide", "label": "Glide", "min": 0, "max": 500, "default": 0, "unit": "ms", "group": "Voice" },
+      { "id": "volume", "label": "Volume", "min": -36, "max": 6, "default": 0, "unit": "dB", "group": "Voice" },
+      { "id": "m1src", "label": "Source", "min": 0, "max": 6, "default": 1, "unit": "", "step": 1, "options": ["Off", "Envelope 2", "LFO 1", "LFO 2", "Velocity", "Key", "Random"], "group": "Matrix" },
+      { "id": "m1dst", "label": "Destination", "min": 0, "max": 9, "default": 4, "unit": "", "step": 1, "options": ["Osc A position", "Osc B position", "Pitch", "Osc B pitch", "Cutoff", "Resonance", "Osc A level", "Osc B level", "Volume", "Pan"], "group": "Matrix" },
+      { "id": "m1amt", "label": "Amount", "min": -100, "max": 100, "default": 30, "unit": "%", "bipolar": true, "group": "Matrix" },
+      { "id": "m2src", "label": "Source", "min": 0, "max": 6, "default": 2, "unit": "", "step": 1, "options": ["Off", "Envelope 2", "LFO 1", "LFO 2", "Velocity", "Key", "Random"], "group": "Matrix" },
+      { "id": "m2dst", "label": "Destination", "min": 0, "max": 9, "default": 0, "unit": "", "step": 1, "options": ["Osc A position", "Osc B position", "Pitch", "Osc B pitch", "Cutoff", "Resonance", "Osc A level", "Osc B level", "Volume", "Pan"], "group": "Matrix" },
+      { "id": "m2amt", "label": "Amount", "min": -100, "max": 100, "default": 0, "unit": "%", "bipolar": true, "group": "Matrix" },
+      { "id": "m3src", "label": "Source", "min": 0, "max": 6, "default": 0, "unit": "", "step": 1, "options": ["Off", "Envelope 2", "LFO 1", "LFO 2", "Velocity", "Key", "Random"], "group": "Matrix" },
+      { "id": "m3dst", "label": "Destination", "min": 0, "max": 9, "default": 0, "unit": "", "step": 1, "options": ["Osc A position", "Osc B position", "Pitch", "Osc B pitch", "Cutoff", "Resonance", "Osc A level", "Osc B level", "Volume", "Pan"], "group": "Matrix" },
+      { "id": "m3amt", "label": "Amount", "min": -100, "max": 100, "default": 0, "unit": "%", "bipolar": true, "group": "Matrix" },
+      { "id": "m4src", "label": "Source", "min": 0, "max": 6, "default": 0, "unit": "", "step": 1, "options": ["Off", "Envelope 2", "LFO 1", "LFO 2", "Velocity", "Key", "Random"], "group": "Matrix" },
+      { "id": "m4dst", "label": "Destination", "min": 0, "max": 9, "default": 0, "unit": "", "step": 1, "options": ["Osc A position", "Osc B position", "Pitch", "Osc B pitch", "Cutoff", "Resonance", "Osc A level", "Osc B level", "Volume", "Pan"], "group": "Matrix" },
+      { "id": "m4amt", "label": "Amount", "min": -100, "max": 100, "default": 0, "unit": "%", "bipolar": true, "group": "Matrix" },
+      { "id": "m5src", "label": "Source", "min": 0, "max": 6, "default": 0, "unit": "", "step": 1, "options": ["Off", "Envelope 2", "LFO 1", "LFO 2", "Velocity", "Key", "Random"], "group": "Matrix" },
+      { "id": "m5dst", "label": "Destination", "min": 0, "max": 9, "default": 0, "unit": "", "step": 1, "options": ["Osc A position", "Osc B position", "Pitch", "Osc B pitch", "Cutoff", "Resonance", "Osc A level", "Osc B level", "Volume", "Pan"], "group": "Matrix" },
+      { "id": "m5amt", "label": "Amount", "min": -100, "max": 100, "default": 0, "unit": "%", "bipolar": true, "group": "Matrix" },
+      { "id": "m6src", "label": "Source", "min": 0, "max": 6, "default": 0, "unit": "", "step": 1, "options": ["Off", "Envelope 2", "LFO 1", "LFO 2", "Velocity", "Key", "Random"], "group": "Matrix" },
+      { "id": "m6dst", "label": "Destination", "min": 0, "max": 9, "default": 0, "unit": "", "step": 1, "options": ["Osc A position", "Osc B position", "Pitch", "Osc B pitch", "Cutoff", "Resonance", "Osc A level", "Osc B level", "Volume", "Pan"], "group": "Matrix" },
+      { "id": "m6amt", "label": "Amount", "min": -100, "max": 100, "default": 0, "unit": "%", "bipolar": true, "group": "Matrix" },
+      { "id": "m7src", "label": "Source", "min": 0, "max": 6, "default": 0, "unit": "", "step": 1, "options": ["Off", "Envelope 2", "LFO 1", "LFO 2", "Velocity", "Key", "Random"], "group": "Matrix" },
+      { "id": "m7dst", "label": "Destination", "min": 0, "max": 9, "default": 0, "unit": "", "step": 1, "options": ["Osc A position", "Osc B position", "Pitch", "Osc B pitch", "Cutoff", "Resonance", "Osc A level", "Osc B level", "Volume", "Pan"], "group": "Matrix" },
+      { "id": "m7amt", "label": "Amount", "min": -100, "max": 100, "default": 0, "unit": "%", "bipolar": true, "group": "Matrix" },
+      { "id": "m8src", "label": "Source", "min": 0, "max": 6, "default": 0, "unit": "", "step": 1, "options": ["Off", "Envelope 2", "LFO 1", "LFO 2", "Velocity", "Key", "Random"], "group": "Matrix" },
+      { "id": "m8dst", "label": "Destination", "min": 0, "max": 9, "default": 0, "unit": "", "step": 1, "options": ["Osc A position", "Osc B position", "Pitch", "Osc B pitch", "Cutoff", "Resonance", "Osc A level", "Osc B level", "Volume", "Pan"], "group": "Matrix" },
+      { "id": "m8amt", "label": "Amount", "min": -100, "max": 100, "default": 0, "unit": "%", "bipolar": true, "group": "Matrix" }
+    ]
+  },
+  {
     "type": "epiano",
     "name": "Electric Piano",
     "role": "instrument",
@@ -186,7 +252,8 @@
       { "id": "b8gain", "label": "Gain", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true, "group": "band:8" },
       { "id": "b8q", "label": "Q", "min": 0.1, "max": 18, "default": 0.71, "unit": "", "log": true, "group": "band:8" },
       { "id": "output", "label": "Output", "min": -24, "max": 24, "default": 0, "unit": "dB", "bipolar": true },
-      { "id": "phase", "label": "Phase", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Minimum", "Linear"] }
+      { "id": "phase", "label": "Phase", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Minimum", "Linear"] },
+      { "id": "wet", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
     ]
   },
   {
@@ -218,7 +285,8 @@
       { "id": "range", "label": "Range", "min": -80, "max": 0, "default": -80, "unit": "dB" },
       { "id": "attack", "label": "Attack", "min": 0.01, "max": 50, "default": 0.5, "unit": "ms", "log": true },
       { "id": "hold", "label": "Hold", "min": 0, "max": 500, "default": 20, "unit": "ms" },
-      { "id": "release", "label": "Release", "min": 1, "max": 2000, "default": 80, "unit": "ms", "log": true }
+      { "id": "release", "label": "Release", "min": 1, "max": 2000, "default": 80, "unit": "ms", "log": true },
+      { "id": "wet", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
     ]
   },
   {
@@ -321,7 +389,8 @@
     "params": [
       { "id": "gain", "label": "Gain", "min": 0, "max": 24, "default": 0, "unit": "dB" },
       { "id": "ceiling", "label": "Ceiling", "min": -12, "max": 0, "default": -1, "unit": "dB" },
-      { "id": "release", "label": "Release", "min": 1, "max": 1000, "default": 50, "unit": "ms", "log": true }
+      { "id": "release", "label": "Release", "min": 1, "max": 1000, "default": 50, "unit": "ms", "log": true },
+      { "id": "wet", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
     ]
   },
   {
@@ -336,7 +405,8 @@
       { "id": "width", "label": "Width", "min": 0, "max": 200, "default": 100, "unit": "%" },
       { "id": "pan", "label": "Pan", "min": -50, "max": 50, "default": 0, "unit": "", "bipolar": true },
       { "id": "mono", "label": "Mono", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Off", "On"] },
-      { "id": "invert", "label": "Phase", "min": 0, "max": 3, "default": 0, "unit": "", "step": 1, "options": ["Normal", "Invert L", "Invert R", "Invert both"] }
+      { "id": "invert", "label": "Phase", "min": 0, "max": 3, "default": 0, "unit": "", "step": 1, "options": ["Normal", "Invert L", "Invert R", "Invert both"] },
+      { "id": "wet", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
     ]
   },
   {
@@ -393,7 +463,8 @@
       { "id": "thresh", "label": "Threshold", "min": -60, "max": 0, "default": -24, "unit": "dB" },
       { "id": "range", "label": "Range", "min": 0, "max": 40, "default": 10, "unit": "dB" },
       { "id": "mode", "label": "Mode", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Highs only", "Whole signal"] },
-      { "id": "listen", "label": "Listen", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Off", "Highs"] }
+      { "id": "listen", "label": "Listen", "min": 0, "max": 1, "default": 0, "unit": "", "step": 1, "options": ["Off", "Highs"] },
+      { "id": "wet", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
     ]
   },
   {
@@ -422,7 +493,8 @@
       { "id": "sync", "label": "Sync", "min": 0, "max": 6, "default": 0, "unit": "", "step": 1, "options": ["Free", "1/16", "1/8", "1/4", "1/2", "1 bar", "2 bars"] },
       { "id": "depth", "label": "Amount", "min": 0, "max": 100, "default": 100, "unit": "%" },
       { "id": "shape", "label": "Shape", "min": 0, "max": 2, "default": 0, "unit": "", "step": 1, "options": ["Sine", "Triangle", "Square"] },
-      { "id": "phase", "label": "Phase", "min": 0, "max": 360, "default": 180, "unit": "°" }
+      { "id": "phase", "label": "Phase", "min": 0, "max": 360, "default": 180, "unit": "°" },
+      { "id": "wet", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
     ]
   },
   {
@@ -458,7 +530,7 @@
     "name": "Convolution Reverb",
     "role": "effect",
     "category": "audio-fx",
-    "description": "Rooms, halls, a plate and a cathedral, as impulse responses",
+    "description": "Rooms, halls, a plate and a cathedral, or your own impulse response file",
     "phase": 4,
     "params": [
       { "id": "space", "label": "Space", "min": 0, "max": 4, "default": 2, "unit": "", "step": 1, "options": ["Room", "Chamber", "Hall", "Plate", "Cathedral"] },
@@ -486,6 +558,25 @@
       { "id": "release", "label": "Release", "min": 10, "max": 500, "default": 80, "unit": "ms", "log": true },
       { "id": "output", "label": "Output", "min": -12, "max": 24, "default": 6, "unit": "dB", "bipolar": true },
       { "id": "mix", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%" }
+    ]
+  },
+  {
+    "type": "fx-rack",
+    "name": "Audio Effect Rack",
+    "role": "effect",
+    "category": "audio-fx",
+    "description": "Chains of effects side by side, each with its level and pan, and eight macros",
+    "phase": 4,
+    "params": [
+      { "id": "macro1", "label": "Macro 1", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro2", "label": "Macro 2", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro3", "label": "Macro 3", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro4", "label": "Macro 4", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro5", "label": "Macro 5", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro6", "label": "Macro 6", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro7", "label": "Macro 7", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "macro8", "label": "Macro 8", "min": 0, "max": 100, "default": 0, "unit": "%", "group": "Macros" },
+      { "id": "wet", "label": "Dry/Wet", "min": 0, "max": 100, "default": 100, "unit": "%", "group": "Output" }
     ]
   },
   {

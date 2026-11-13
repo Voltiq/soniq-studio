@@ -5,9 +5,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use soniq_dsp::{AudioFx, External, Instrument, Key, MacroLink, MidiFx, PadChains, PadFx, ParamBank, Params, Rack, RackLayer, SampleSlot, Warper};
+use soniq_dsp::{AudioFx, External, FxRack, FxRackChain, Instrument, Key, MacroLink, MidiFx, PadChains, PadFx, ParamBank, Params, Rack, RackFx, RackLayer, SampleSlot, Warper};
 use soniq_engine::{ClipNode, ClipWarp, Dest, FadeShape, Follow, FxNode, InstrumentNode, LaneNode, ModNode, ModSource, ScheduledNote, SlotNode, db_to_gain, track_key};
-use soniq_project::{AutoTarget, Clip, ClipContent, Device, DeviceParam, DeviceRole, EnvPoint, FadeCurve, MODULATOR_TYPES, PLUGIN_TYPE, TempoMap, Track, WarpMode};
+use soniq_project::{AutoTarget, Clip, ClipContent, Device, DeviceParam, DeviceRole, EnvPoint, FX_RACK, FadeCurve, MODULATOR_TYPES, MacroMap, PLUGIN_TYPE, TempoMap, Track, WarpMode};
 
 use crate::session::Pool;
 
@@ -22,16 +22,67 @@ pub type PluginNode<'a> = &'a dyn Fn(&Device, bool) -> Option<Box<dyn External>>
 
 /// The audio effects of a chain that are switched on, in order, each with
 /// the index of the track its sidechain listens to.
-pub fn fx_chain(devices: &[Device], rate: u32, tracks: &HashMap<&str, usize>, plugin: PluginNode) -> Vec<FxNode> {
+pub fn fx_chain(devices: &[Device], rate: u32, tracks: &HashMap<&str, usize>, plugin: PluginNode, pool: &Pool) -> Vec<FxNode> {
     devices
         .iter()
         .filter(|d| d.on && d.role == DeviceRole::Effect)
         .filter_map(|d| {
             let bank = bank(d);
-            let fx = if d.kind == PLUGIN_TYPE { AudioFx::External(plugin(d, false)?) } else { AudioFx::build(&d.kind, rate, &bank)? };
+            let fx = match d.kind.as_str() {
+                PLUGIN_TYPE => AudioFx::External(plugin(d, false)?).with_wet(rate as f32, &bank),
+                // The rack's own Dry/Wet goes around all of its chains.
+                FX_RACK => fx_rack(d, rate, pool).with_wet(rate as f32, &bank),
+                kind => AudioFx::build_with(kind, rate, &bank, &sample_slots(d, &bank, pool))?,
+            };
             Some(FxNode::new(d.id.clone(), fx, d.sidechain.as_deref().and_then(|s| tracks.get(s).copied()), bank))
         })
         .collect()
+}
+
+/// A built-in effect inside a rack chain or on a drum pad, with its own
+/// parameter values. Nothing in there makes up for a delay, so an EQ stays
+/// minimum phase.
+fn inner_fx(d: &Device, rate: u32, pool: &Pool) -> Option<(AudioFx, ParamBank)> {
+    if !d.on || d.role != DeviceRole::Effect || d.kind == PLUGIN_TYPE || d.kind == FX_RACK {
+        return None;
+    }
+    let mut bank = bank(d);
+    if let Some(phase) = bank.find("phase").filter(|_| d.kind == "eq") {
+        bank.set(phase, 0.0);
+    }
+    let fx = AudioFx::build_with(&d.kind, rate, &bank, &sample_slots(d, &bank, pool))?;
+    Some((fx, bank))
+}
+
+/// A macro's hold on one parameter of a device in a rack chain.
+fn macro_link(m: &MacroMap, device: &Device, bank: &ParamBank) -> Option<MacroLink> {
+    let p = device.params.iter().find(|p| p.id == m.param)?;
+    Some(MacroLink { macro_index: usize::from(m.index), param: bank.find(&m.param)?, from: m.min, to: m.max, min: p.min, max: p.max, log: p.log == Some(true), step: p.step })
+}
+
+/// An audio effect rack: its chains that are switched on, each effect with
+/// the macros that turn its knobs.
+fn fx_rack(device: &Device, rate: u32, pool: &Pool) -> AudioFx {
+    let chains = device
+        .fx_chains
+        .iter()
+        .filter(|c| c.on)
+        .map(|c| FxRackChain {
+            id: c.id.clone(),
+            fx: c
+                .devices
+                .iter()
+                .filter_map(|d| {
+                    let (fx, bank) = inner_fx(d, rate, pool)?;
+                    let links = device.macros.iter().filter(|m| m.chain == c.id && m.device.as_deref() == Some(d.id.as_str())).filter_map(|m| macro_link(m, d, &bank)).collect();
+                    Some(RackFx { id: d.id.clone(), fx, bank, links })
+                })
+                .collect(),
+            volume: c.volume,
+            pan: c.pan as f32,
+        })
+        .collect();
+    AudioFx::Rack(FxRack::new(chains, rate as f32, &bank(device)))
 }
 
 /// The samples a device plays, at the engine rate, with the transients a
@@ -60,24 +111,7 @@ fn rack(device: &Device, pool: &Pool, rate: u32) -> Instrument {
         .filter_map(|c| {
             let bank = bank(&c.device);
             let instrument = Instrument::build(&c.device.kind, rate, &bank, &sample_slots(&c.device, &bank, pool))?;
-            let links = device
-                .macros
-                .iter()
-                .filter(|m| m.chain == c.id)
-                .filter_map(|m| {
-                    let p = c.device.params.iter().find(|p| p.id == m.param)?;
-                    Some(MacroLink {
-                        macro_index: usize::from(m.index),
-                        param: bank.find(&m.param)?,
-                        from: m.min,
-                        to: m.max,
-                        min: p.min,
-                        max: p.max,
-                        log: p.log == Some(true),
-                        step: p.step,
-                    })
-                })
-                .collect();
+            let links = device.macros.iter().filter(|m| m.chain == c.id).filter_map(|m| macro_link(m, &c.device, &bank)).collect();
             Some(RackLayer {
                 id: c.id.clone(),
                 instrument,
@@ -94,20 +128,10 @@ fn rack(device: &Device, pool: &Pool, rate: u32) -> Instrument {
 }
 
 /// A Drum Rack's pad effects and returns, as the engine runs them.
-fn pad_chains(device: &Device, rate: u32) -> PadChains {
+fn pad_chains(device: &Device, rate: u32, pool: &Pool) -> PadChains {
     let mut chains = PadChains::default();
     for chain in &device.pad_chains {
-        let fx: Vec<PadFx> = chain
-            .devices
-            .iter()
-            .filter(|d| d.on && d.role == DeviceRole::Effect && d.kind != PLUGIN_TYPE)
-            .filter_map(|d| {
-                // Nothing inside the rack makes up for a delay: the EQ stays minimum phase here.
-                let bank = bank(d);
-                let params = |id: &str| if id == "phase" { Some(0.0) } else { bank.get(id) };
-                Some(PadFx { id: d.id.clone(), fx: AudioFx::build(&d.kind, rate, &params)? })
-            })
-            .collect();
+        let fx: Vec<PadFx> = chain.devices.iter().filter_map(|d| Some(PadFx { id: d.id.clone(), fx: inner_fx(d, rate, pool)?.0 })).collect();
         match chain.key.as_str() {
             "A" => chains.returns[0] = fx,
             "B" => chains.returns[1] = fx,
@@ -134,7 +158,7 @@ pub fn instrument_node(track: &Track, pool: &Pool, timeline: &Timeline, song_key
         kind => Instrument::build(kind, rate, &params, &sample_slots(device, &params, pool))?,
     };
     if let Instrument::Drums(drums) = &mut instrument {
-        drums.set_chains(pad_chains(device, rate));
+        drums.set_chains(pad_chains(device, rate, pool));
     }
     let fx: Vec<(String, MidiFx)> = track
         .devices

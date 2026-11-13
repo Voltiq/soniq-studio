@@ -3,7 +3,7 @@
 use serde::Deserialize;
 
 use crate::{
-    Asset, AutoPoint, AutoTarget, AutomationLane, Chain, ChainOwner, Clip, ClipContent, ControllerMapping, Device, DeviceParam, DeviceRole, EnvPoint, FollowAction, History,
+    Asset, AutoPoint, AutoTarget, AutomationLane, Chain, ChainOwner, Clip, FX_RACK, FxChain, ClipContent, ControllerMapping, Device, DeviceParam, DeviceRole, EnvPoint, FollowAction, History,
     MAX_BPM, MIN_BPM, MODULATOR_TYPES, MappingTarget, Marker, MeterChange, Monitor, Note, PLUGIN_TYPE, ParamRef, Project, SIDECHAIN_TYPES, SampleRef, TakeLane, TempoMap, TempoPoint, Track,
     TrackKind, TrackRole, Warp, FadeCurve, find_device_mut,
 };
@@ -254,8 +254,15 @@ pub enum Op {
     /// Loads an asset (already in the project) into a drum pad (`key` is its
     /// note) or a sampler (`key` 0); `None` clears it.
     SetDeviceSample { track: String, device: String, key: u8, asset: Option<String> },
-    /// Adds a chain playing a new instrument of type `kind` to an instrument rack.
-    AddChain { track: String, device: String, kind: String },
+    /// Adds a chain playing a new instrument of type `kind` to an instrument
+    /// rack, or an empty chain to an audio effect rack (which takes no `kind`,
+    /// and may sit on a return or the master too).
+    AddChain {
+        track: String,
+        device: String,
+        #[serde(default)]
+        kind: String,
+    },
     RemoveChain { track: String, device: String, chain: String },
     SetChain { track: String, device: String, chain: String, patch: ChainPatch },
     /// Points macro `index` (0–7) at a chain's parameter, swept from `min` to
@@ -264,6 +271,9 @@ pub enum Op {
         track: String,
         device: String,
         chain: String,
+        /// In an audio effect rack: the effect in the chain.
+        #[serde(default)]
+        inner: Option<String>,
         param: String,
         #[serde(default)]
         index: Option<u8>,
@@ -415,6 +425,38 @@ fn chain_index(rack: &Device, id: &str) -> Result<usize, OpError> {
     rack.chains.iter().position(|c| c.id == id).ok_or_else(|| OpError::Invalid("That chain no longer exists".into()))
 }
 
+/// An audio effect rack in a track's, a return's or the master's chain; `None` when the device is another kind.
+fn fx_rack_mut<'a>(project: &'a mut Project, owner: &str, id: &str) -> Result<Option<&'a mut Device>, OpError> {
+    let (_, devices) = chain_mut(project, owner)?;
+    let device = devices.iter_mut().find(|d| d.id == id).ok_or_else(|| OpError::NoDevice(id.to_string()))?;
+    Ok((device.kind == FX_RACK).then_some(device))
+}
+
+fn fx_chain_index(rack: &Device, id: &str) -> Result<usize, OpError> {
+    rack.fx_chains.iter().position(|c| c.id == id).ok_or_else(|| OpError::Invalid("That chain no longer exists".into()))
+}
+
+/// Changes an effect rack chain's name, switch, level and pan (it has no zones).
+fn set_fx_chain(c: &mut FxChain, patch: ChainPatch) -> Result<(), OpError> {
+    if let Some(name) = patch.name {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(OpError::Invalid("A chain needs a name".into()));
+        }
+        c.name = name.to_string();
+    }
+    if let Some(on) = patch.on {
+        c.on = on;
+    }
+    if let Some(v) = patch.volume {
+        c.volume = v.clamp(-60.0, 6.0);
+    }
+    if let Some(v) = patch.pan {
+        c.pan = v.clamp(-1.0, 1.0);
+    }
+    Ok(())
+}
+
 fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
     let label = |s: String| Applied { label: s, ..Default::default() };
     match op {
@@ -516,10 +558,30 @@ fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
             if MODULATOR_TYPES.contains(&device.kind.as_str()) && matches!(owner, ChainOwner::Return | ChainOwner::Master) {
                 return Err(OpError::Invalid(format!("{} works on tracks", device.name)));
             }
-            if owner == ChainOwner::Pad && (device.role != DeviceRole::Effect || midi_fx || MODULATOR_TYPES.contains(&device.kind.as_str()) || device.kind == PLUGIN_TYPE) {
-                return Err(OpError::Invalid(format!("Drum pads take built-in audio effects; {} goes on the track", device.name)));
+            let inside = matches!(owner, ChainOwner::Pad | ChainOwner::Rack);
+            let plain = device.role == DeviceRole::Effect && !midi_fx && !MODULATOR_TYPES.contains(&device.kind.as_str()) && device.kind != PLUGIN_TYPE && device.kind != FX_RACK;
+            if inside && !plain {
+                let host = if owner == ChainOwner::Pad { "Drum pads" } else { "Rack chains" };
+                return Err(OpError::Invalid(format!("{host} take built-in audio effects; {} goes on the track", device.name)));
             }
             device.id = crate::new_id("dev");
+            // A copied rack's chains and effects are new ones too.
+            let mut renamed: Vec<(String, String)> = Vec::new();
+            for chain in &mut device.fx_chains {
+                let id = crate::new_id("ch");
+                renamed.push((std::mem::replace(&mut chain.id, id.clone()), id));
+                for inner in &mut chain.devices {
+                    let id = crate::new_id("dev");
+                    renamed.push((std::mem::replace(&mut inner.id, id.clone()), id));
+                }
+            }
+            if device.kind == FX_RACK {
+                let now = |old: &str| renamed.iter().find(|(was, _)| was == old).map(|(_, new)| new.clone());
+                for m in &mut device.macros {
+                    m.chain = now(&m.chain).unwrap_or_default();
+                    m.device = m.device.as_deref().and_then(now);
+                }
+            }
             device.sidechain = None;
             device.modulates = None;
             let name = device.name.clone();
@@ -541,6 +603,7 @@ fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
             let index = devices.iter().position(|d| d.id == device).ok_or(OpError::NoDevice(device))?;
             let removed = devices.remove(index);
             project.prune_pad_chains();
+            project.prune_macros();
             project.prune_assets();
             project.prune_mappings();
             project.prune_targets();
@@ -643,7 +706,11 @@ fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
             if device.kind != PLUGIN_TYPE {
                 return Err(OpError::Invalid(format!("{} is not a plugin", device.name)));
             }
+            // The Dry/Wet around a plugin effect is the engine's, not one of the plugin's controls: it stays.
+            let wet = device.params.iter().find(|p| p.id == "wet").cloned();
             device.params = params;
+            device.params.retain(|p| p.id != "wet");
+            device.params.extend(wet);
             let name = device.name.clone();
             project.prune_targets();
             project.prune_mappings();
@@ -1040,6 +1107,12 @@ fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
             Ok(label(what))
         }
         Op::AddChain { track, device, kind } => {
+            if let Some(rack) = fx_rack_mut(project, &track, &device)? {
+                let chain = FxChain::new(format!("Chain {}", rack.fx_chains.len() + 1));
+                let (id, name) = (chain.id.clone(), chain.name.clone());
+                rack.fx_chains.push(chain);
+                return Ok(Applied { label: format!("Add {name}"), created: Some(id), tempo_changed: false });
+            }
             let instrument = crate::catalog::device(&kind, &[]).ok_or_else(|| OpError::Invalid(format!("Unknown device {kind}")))?;
             if instrument.role != DeviceRole::Instrument || kind == "rack" {
                 return Err(OpError::Invalid(format!("{} can't go in a rack chain", instrument.name)));
@@ -1051,6 +1124,13 @@ fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
             Ok(Applied { label: format!("Add a {name} chain"), created: Some(id), tempo_changed: false })
         }
         Op::RemoveChain { track, device, chain } => {
+            if let Some(rack) = fx_rack_mut(project, &track, &device)? {
+                let removed = rack.fx_chains.remove(fx_chain_index(rack, &chain)?);
+                project.prune_macros();
+                project.prune_assets();
+                project.prune_mappings();
+                return Ok(label(format!("Remove the {} chain", removed.name)));
+            }
             let rack = rack_mut(track_mut(project, &track)?, &device)?;
             let removed = rack.chains.remove(chain_index(rack, &chain)?);
             rack.macros.retain(|m| m.chain != chain);
@@ -1059,6 +1139,11 @@ fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
             Ok(label(format!("Remove the {} chain", removed.name)))
         }
         Op::SetChain { track, device, chain, patch } => {
+            if let Some(rack) = fx_rack_mut(project, &track, &device)? {
+                let index = fx_chain_index(rack, &chain)?;
+                set_fx_chain(&mut rack.fx_chains[index], patch)?;
+                return Ok(label(format!("Change the {} chain", rack.fx_chains[index].name)));
+            }
             let rack = rack_mut(track_mut(project, &track)?, &device)?;
             let index = chain_index(rack, &chain)?;
             let c = &mut rack.chains[index];
@@ -1097,13 +1182,23 @@ fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
             }
             Ok(label(format!("Change the {} chain", c.name)))
         }
-        Op::MapMacro { track, device, chain, param, index, min, max } => {
-            let rack = rack_mut(track_mut(project, &track)?, &device)?;
-            let c = &rack.chains[chain_index(rack, &chain)?];
-            let p = c.device.params.iter().find(|p| p.id == param).ok_or(OpError::Invalid(format!("No parameter {param}")))?.clone();
-            let what = format!("{} {}", c.name, p.label);
+        Op::MapMacro { track, device, chain, inner, param, index, min, max } => {
+            let effects = fx_rack_mut(project, &track, &device)?.is_some();
+            let rack = if effects { fx_rack_mut(project, &track, &device)?.expect("checked just above") } else { rack_mut(track_mut(project, &track)?, &device)? };
+            // The device whose parameter it is: the chain's instrument, or one of an effect chain's effects.
+            let (target, chain_name) = if effects {
+                let c = &rack.fx_chains[fx_chain_index(rack, &chain)?];
+                let id = inner.clone().ok_or_else(|| OpError::Invalid("Which effect in the chain?".into()))?;
+                (c.devices.iter().find(|d| d.id == id).ok_or(OpError::NoDevice(id))?, c.name.clone())
+            } else {
+                let c = &rack.chains[chain_index(rack, &chain)?];
+                (&c.device, c.name.clone())
+            };
+            let inner = if effects { inner } else { None };
+            let p = target.params.iter().find(|p| p.id == param).ok_or(OpError::Invalid(format!("No parameter {param}")))?.clone();
+            let what = if effects { format!("{} {}", target.name, p.label) } else { format!("{chain_name} {}", p.label) };
             // One macro per parameter.
-            rack.macros.retain(|m| !(m.chain == chain && m.param == param));
+            rack.macros.retain(|m| !(m.chain == chain && m.device == inner && m.param == param));
             let Some(index) = index else { return Ok(label(format!("Unmap {what}"))) };
             if index >= crate::MACROS {
                 return Err(OpError::Invalid(format!("There are {} macros", crate::MACROS)));
@@ -1111,6 +1206,7 @@ fn mutate(project: &mut Project, op: Op) -> Result<Applied, OpError> {
             let map = crate::MacroMap {
                 index,
                 chain,
+                device: inner,
                 param,
                 min: min.unwrap_or(p.min).clamp(p.min, p.max),
                 max: max.unwrap_or(p.max).clamp(p.min, p.max),
@@ -2609,6 +2705,7 @@ mod tests {
             track: midi.clone(),
             device: rack.clone(),
             chain: synth.clone(),
+            inner: None,
             param: "cutoff".into(),
             index: Some(0),
             min: Some(100.0),
@@ -2628,6 +2725,98 @@ mod tests {
         assert_eq!((device.chains.len(), device.macros.len()), (1, 0));
         let json = serde_json::to_string(&project).unwrap();
         assert_eq!(serde_json::from_str::<Project>(&json).unwrap(), project);
+    }
+
+    #[test]
+    fn effect_racks_hold_chains_of_effects_that_macros_turn() {
+        let (mut project, _) = song_with_audio_clip();
+        let mut history = History::new();
+        let device = |kind: &str| crate::catalog::device(kind, &[]).unwrap();
+        // On the master: effect racks go wherever effects go.
+        let master = crate::MASTER.to_string();
+        apply(&mut project, &mut history, Op::AddDevice { track: master.clone(), device: device("fx-rack") }).unwrap();
+        let rack = project.master_devices[0].id.clone();
+        let add = |project: &mut Project, history: &mut History| apply(project, history, Op::AddChain { track: master.clone(), device: rack.clone(), kind: String::new() }).map(|a| a.created.unwrap());
+        let dry = add(&mut project, &mut history).unwrap();
+        let wet = add(&mut project, &mut history).unwrap();
+        assert_eq!(project.master_devices[0].fx_chains.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Chain 1", "Chain 2"]);
+
+        // A chain is a device chain of its own, for built-in audio effects.
+        let inside = format!("{master}/{rack}/{wet}");
+        apply(&mut project, &mut history, Op::AddDevice { track: inside.clone(), device: device("comp") }).unwrap();
+        apply(&mut project, &mut history, Op::AddDevice { track: inside.clone(), device: device("convolution") }).unwrap();
+        for kind in ["synth", "arp", "lfo", "fx-rack"] {
+            assert!(apply(&mut project, &mut history, Op::AddDevice { track: inside.clone(), device: device(kind) }).is_err(), "{kind} in a rack chain");
+        }
+        assert!(apply(&mut project, &mut history, Op::AddDevice { track: format!("{master}/{rack}/nope"), device: device("eq") }).is_err());
+        let chain = project.chain(&inside).unwrap();
+        let (comp, reverb) = (chain[0].id.clone(), chain[1].id.clone());
+        assert_eq!(chain.iter().map(|d| d.kind.as_str()).collect::<Vec<_>>(), ["comp", "convolution"]);
+
+        // Its effects take parameter changes, and a reverb in it its own impulse response, which keeps the file in the song.
+        apply(&mut project, &mut history, Op::SetParam { track: inside.clone(), device: comp.clone(), param: "thresh".into(), value: -30.0 }).unwrap();
+        apply(&mut project, &mut history, Op::SetDeviceSample { track: inside.clone(), device: reverb.clone(), key: 0, asset: Some("a1".into()) }).unwrap();
+        project.tracks[0].clips.clear();
+        project.prune_assets();
+        assert!(project.asset("a1").is_some(), "the impulse response is still used");
+
+        // Level, pan and name; zones mean nothing here.
+        let patch = ChainPatch { volume: Some(-90.0), pan: Some(0.5), name: Some(" Crushed ".into()), key_low: Some(40), ..Default::default() };
+        apply(&mut project, &mut history, Op::SetChain { track: master.clone(), device: rack.clone(), chain: wet.clone(), patch }).unwrap();
+        let c = &project.master_devices[0].fx_chains[1];
+        assert_eq!((c.name.as_str(), c.volume, c.pan), ("Crushed", -60.0, 0.5));
+
+        // A macro takes the knob's place, then drives it.
+        let map = |inner: Option<String>, index: Option<u8>| Op::MapMacro { track: master.clone(), device: rack.clone(), chain: wet.clone(), inner, param: "thresh".into(), index, min: None, max: None };
+        assert!(apply(&mut project, &mut history, map(None, Some(2))).is_err(), "which effect?");
+        apply(&mut project, &mut history, map(Some(comp.clone()), Some(2))).unwrap();
+        let r = &project.master_devices[0];
+        let amount = r.param("macro3").unwrap();
+        assert!((r.fx_chain_param(&wet, &r.fx_chains[1].devices[0], "thresh").unwrap() + 30.0).abs() < 1e-6, "nothing jumps: {amount}");
+        apply(&mut project, &mut history, Op::SetParam { track: master.clone(), device: rack.clone(), param: "macro3".into(), value: 100.0 }).unwrap();
+        let r = &project.master_devices[0];
+        let top = r.fx_chains[1].devices[0].params.iter().find(|p| p.id == "thresh").unwrap().max;
+        assert_eq!(r.fx_chain_param(&wet, &r.fx_chains[1].devices[0], "thresh"), Some(top));
+        let json = serde_json::to_string(&project).unwrap();
+        assert_eq!(serde_json::from_str::<Project>(&json).unwrap(), project);
+
+        // A copy of the rack (a preset, a duplicate) gets ids of its own and keeps its mapping.
+        let copy = project.master_devices[0].clone();
+        apply(&mut project, &mut history, Op::AddDevice { track: master.clone(), device: copy }).unwrap();
+        let (first, second) = (&project.master_devices[0], &project.master_devices[1]);
+        assert!(second.fx_chains[1].id != first.fx_chains[1].id && second.fx_chains[1].devices[0].id != comp);
+        assert_eq!(second.macros.len(), 1);
+        assert_eq!(second.macros[0].chain, second.fx_chains[1].id);
+        assert_eq!(second.macros[0].device.as_deref(), Some(second.fx_chains[1].devices[0].id.as_str()));
+        let second = second.id.clone();
+        apply(&mut project, &mut history, Op::RemoveDevice { track: master.clone(), device: second }).unwrap();
+
+        // Taking the effect away drops its mapping; taking the chain away takes its effects along, and the response's file.
+        apply(&mut project, &mut history, Op::RemoveDevice { track: inside.clone(), device: comp }).unwrap();
+        assert!(project.master_devices[0].macros.is_empty());
+        apply(&mut project, &mut history, Op::RemoveChain { track: master.clone(), device: rack.clone(), chain: wet }).unwrap();
+        assert_eq!(project.master_devices[0].fx_chains.len(), 1);
+        assert!(project.asset("a1").is_none());
+        apply(&mut project, &mut history, Op::RemoveChain { track: master, device: rack, chain: dry }).unwrap();
+        assert!(project.master_devices[0].fx_chains.is_empty());
+    }
+
+    #[test]
+    fn the_wavetable_and_dry_wet_are_in_the_catalog() {
+        let wavetable = crate::catalog::device("wavetable", &[]).unwrap();
+        assert_eq!(wavetable.role, DeviceRole::Instrument);
+        // Eight matrix slots of a source, a destination and an amount.
+        assert_eq!(wavetable.params.iter().filter(|p| p.group.as_deref() == Some("Matrix")).count(), 24);
+        assert_eq!(wavetable.params.iter().find(|p| p.id == "m1dst").unwrap().options.as_ref().unwrap()[4], "Cutoff");
+        // Every audio effect has a Dry/Wet: its own mix, or the one the engine puts around it.
+        for spec in crate::catalog::specs().iter().filter(|s| s.category == "audio-fx" && s.kind != "denoise") {
+            assert!(spec.params.iter().any(|p| p.id == "mix" || p.id == "wet"), "{}", spec.kind);
+        }
+        // A device saved before it had one gets it, fully wet.
+        let mut gate = crate::catalog::device("gate", &[]).unwrap();
+        gate.params.retain(|p| p.id != "wet");
+        crate::catalog::refresh(&mut gate);
+        assert_eq!(gate.param("wet"), Some(100.0));
     }
 
     #[test]

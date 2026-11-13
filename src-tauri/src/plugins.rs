@@ -510,7 +510,8 @@ pub async fn plugin_add(state: State<'_, AppState>, track: String, path: String,
         name: descriptor.name.clone(),
         role: if descriptor.is_instrument() { DeviceRole::Instrument } else { DeviceRole::Effect },
         on: true,
-        params: first_controls(&params),
+        // An effect gets the engine's Dry/Wet after its own controls.
+        params: first_controls(&params).into_iter().chain((!descriptor.is_instrument()).then(soniq_project::catalog::wet_param)).collect(),
         samples: Vec::new(),
         chains: Vec::new(),
         macros: Vec::new(),
@@ -519,6 +520,7 @@ pub async fn plugin_add(state: State<'_, AppState>, track: String, path: String,
         plugin: Some(PluginRef { format: format_of(&path).into(), path, id, vendor: descriptor.vendor.clone() }),
         state: None,
         pad_chains: Vec::new(),
+        fx_chains: Vec::new(),
     };
 
     let mut session = lock(&state.session);

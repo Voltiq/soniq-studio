@@ -158,6 +158,20 @@ export interface Device {
   state?: string;
   /** A Drum Rack's pad effects and its returns A and B. */
   padChains?: PadChain[];
+  /** An audio effect rack's chains: effects side by side. */
+  fxChains?: FxChain[];
+}
+
+/** One chain of an audio effect rack: its effects in order, joined to the others at its level and pan. */
+export interface FxChain {
+  id: string;
+  name: string;
+  on: boolean;
+  /** dB. */
+  volume: number;
+  /** −1…1. */
+  pan: number;
+  devices: Device[];
 }
 
 /** A Drum Rack pad's audio effects (key: its note), or return "A" or "B". */
@@ -332,6 +346,8 @@ export type ChainPatch = Partial<Pick<Chain, "name" | "on" | "keyLow" | "keyHigh
 export interface MacroMap {
   index: number;
   chain: string;
+  /** In an audio effect rack: the effect in the chain whose parameter it turns. */
+  device?: string;
   param: string;
   min: number;
   max: number;
@@ -569,11 +585,11 @@ export type Op =
   | { op: "setNotes"; clip: string; notes: Note[]; label?: string }
   | { op: "renameClip"; clip: string; name: string }
   | { op: "setDeviceSample"; track: string; device: string; key: number; asset: string | null }
-  | { op: "addChain"; track: string; device: string; kind: string }
+  | { op: "addChain"; track: string; device: string; kind?: string }
   | { op: "removeChain"; track: string; device: string; chain: string }
   | { op: "setChain"; track: string; device: string; chain: string; patch: ChainPatch }
   /** No `index` unmaps the parameter. */
-  | { op: "mapMacro"; track: string; device: string; chain: string; param: string; index?: number; min?: number; max?: number }
+  | { op: "mapMacro"; track: string; device: string; chain: string; inner?: string; param: string; index?: number; min?: number; max?: number }
   | { op: "setSidechain"; track: string; device: string; source: string | null }
   | { op: "setPluginParams"; track: string; device: string; params: DeviceParam[] }
   | { op: "unfreezeTrack"; track: string }

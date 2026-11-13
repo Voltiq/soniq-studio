@@ -1,7 +1,8 @@
 //! A convolution reverb: the sound played through the recorded "echo" of a
-//! space, an impulse response. The responses here are synthesised (decaying
-//! noise, darker as it fades, with early reflections for rooms), so they
-//! ship with the app and any length is possible.
+//! space, an impulse response. The built-in responses are synthesised
+//! (decaying noise, darker as it fades, with early reflections for rooms),
+//! so they ship with the app and any length is possible; an audio file
+//! loaded into the device is used as the response instead.
 //!
 //! Uniformly partitioned convolution: the response is cut into blocks of
 //! `BLOCK` samples, each held as a spectrum; every `BLOCK` samples of input
@@ -13,6 +14,8 @@ use std::sync::Arc;
 
 use rustfft::num_complex::Complex32;
 use rustfft::{Fft, FftPlanner};
+
+use soniq_io::AudioBuffer;
 
 use super::{DelayLine, Smooth, choice};
 use crate::Params;
@@ -28,8 +31,9 @@ const SPACES: [(f32, bool, f32); 5] = [(0.7, true, 0.6), (1.3, true, 0.5), (2.4,
 
 pub struct Convolution {
     sr: f32,
-    /// What the response was made from, so a rebuilt reverb with the same one keeps its tail.
-    made: (usize, i64),
+    /// What the response was made from (space, length, the loaded file), so a
+    /// rebuilt reverb with the same one keeps its tail.
+    made: (usize, i64, usize),
     fft: Arc<dyn Fft<f32>>,
     ifft: Arc<dyn Fft<f32>>,
     scratch: Vec<Complex32>,
@@ -91,11 +95,49 @@ fn impulse(space: usize, scale: f32, sr: f32) -> [Vec<f32>; 2] {
     out
 }
 
+/// A loaded file as the response: its first `scale` (up to all of it, and
+/// `LONGEST` seconds), from where its sound starts, at the loudness of the
+/// built-in spaces. A mono file gives the same response on both sides.
+fn loaded(buffer: &AudioBuffer, scale: f32, sr: f32) -> Option<[Vec<f32>; 2]> {
+    let left = buffer.channels.first()?;
+    let right = buffer.channels.get(1).unwrap_or(left);
+    let frames = left.len().min(right.len());
+    let top = left[..frames].iter().chain(&right[..frames]).fold(0.0f32, |p, s| p.max(s.abs()));
+    if top <= 1e-6 {
+        return None;
+    }
+    // Silence before the first sound would only be a pre-delay nobody set.
+    let start = (0..frames).find(|&i| left[i].abs().max(right[i].abs()) > top * 0.001).unwrap_or(0);
+    let whole = (frames - start).min((LONGEST * sr) as usize);
+    let len = ((whole as f32 * scale.min(1.0)) as usize).clamp(BLOCK.min(whole), whole);
+    // A response cut short fades out over its last tenth instead of stopping dead.
+    let fade = if len < frames - start { (len / 10).max(1) } else { 0 };
+    let mut out = [left, right].map(|side| {
+        let mut ir = vec![0.0; len.max(BLOCK)];
+        for (i, s) in ir.iter_mut().take(len).enumerate() {
+            let tail = len - i;
+            *s = side[start + i] * if tail <= fade { tail as f32 / fade as f32 } else { 1.0 };
+        }
+        ir
+    });
+    let energy: f32 = out.iter().flatten().map(|s| s * s).sum::<f32>() / 2.0;
+    let norm = 1.0 / energy.sqrt().max(1e-9);
+    for s in out.iter_mut().flatten() {
+        *s *= norm;
+    }
+    Some(out)
+}
+
 impl Convolution {
-    pub fn new(sr: f32, p: &dyn Params) -> Self {
+    /// `file` is the device's own impulse response, at the engine's rate; without one, the space chosen plays.
+    pub fn new(sr: f32, p: &dyn Params, file: Option<&Arc<AudioBuffer>>) -> Self {
         let space = choice(p, "space", 2.0);
         let scale = (p.or("length", 100.0).clamp(25.0, 200.0) / 100.0) as f32;
-        let ir = impulse(space, scale, sr);
+        let own = file.and_then(|f| Some((loaded(f, scale, sr)?, Arc::as_ptr(f) as usize)));
+        let (ir, source) = match own {
+            Some((ir, id)) => (ir, id),
+            None => (impulse(space, scale, sr), 0),
+        };
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(SIZE);
         let ifft = planner.plan_fft_inverse(SIZE);
@@ -117,7 +159,8 @@ impl Convolution {
         });
         let mut reverb = Self {
             sr,
-            made: (space, (scale * 1000.0) as i64),
+            // With a file, the space chosen makes no difference.
+            made: (if source == 0 { space } else { 0 }, (scale * 1000.0) as i64, source),
             fft,
             ifft,
             scratch,
@@ -248,5 +291,33 @@ mod tests {
         let tone = sine(300.0, 0.5, 9600);
         let (l, _) = run(&mut dry, &tone);
         assert!(l.iter().zip(&tone).all(|(a, b)| (a - b).abs() < 1e-6));
+    }
+
+    #[test]
+    fn a_loaded_file_is_the_response() {
+        use std::sync::Arc;
+
+        use soniq_io::AudioBuffer;
+
+        use crate::SampleSlot;
+
+        // Silence, then a response of two clicks 1000 samples apart, the second one half as loud and inverted.
+        let mut ir = vec![0.0f32; 4000];
+        ir[300] = 0.8;
+        ir[1300] = -0.4;
+        let slot = SampleSlot { key: 0, buffer: Arc::new(AudioBuffer::new(SR, vec![ir])), onsets: None };
+        let p = params(&[("mix", 100.0), ("lowcut", 20.0), ("highcut", 20_000.0), ("width", 100.0)]);
+        let mut reverb = AudioFx::build_with("convolution", SR, &p, std::slice::from_ref(&slot)).unwrap();
+        let mut click = vec![0.0f32; 9600];
+        click[0] = 1.0;
+        let (l, r) = run(&mut reverb, &click);
+        // One block late, with the leading silence gone: the clicks land at BLOCK and BLOCK + 1000.
+        let first = (0..l.len()).max_by(|a, b| l[*a].abs().total_cmp(&l[*b].abs())).unwrap();
+        assert!((first as i64 - BLOCK as i64).abs() <= 3, "{first}");
+        let second = l[BLOCK + 1000 - 3..BLOCK + 1000 + 4].iter().fold(0.0f32, |m, s| if s.abs() > m.abs() { *s } else { m });
+        assert!(l[first] > 0.0 && second < 0.0 && (second / l[first] + 0.5).abs() < 0.15, "{} {second}", l[first]);
+        // Nothing between the clicks, and a mono file plays the same on both sides.
+        assert!(peak(&l[BLOCK + 100..BLOCK + 900]) < l[first] * 0.1);
+        assert!(l.iter().zip(&r).all(|(a, b)| (a - b).abs() < 1e-5));
     }
 }

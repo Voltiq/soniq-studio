@@ -281,16 +281,18 @@ pub async fn midi_export(state: State<'_, AppState>, path: String, clip: Option<
     Ok(if count == 1 { "1 track".into() } else { format!("{count} tracks") })
 }
 
-/// Loads an audio file into a sampler (`key` 0) or a drum pad (`key` is its note).
+/// Loads an audio file into a sampler (`key` 0), a drum pad (`key` is its
+/// note) or a convolution reverb, as its impulse response (`key` 0). `track`
+/// names the device's chain: a track, a return, the master, or a chain inside a rack.
 #[tauri::command]
 pub async fn device_load_sample(state: State<'_, AppState>, track: String, device: String, key: u8, path: String) -> CmdResult<ProjectReply> {
     let (asset, pooled): (_, PoolAsset) = files::import_file(&PathBuf::from(&path), state.engine.sample_rate())?;
     let mut session = lock(&state.session);
     let session = &mut *session;
     let before = session.project.clone();
-    let t = session.project.track_mut(&track).ok_or("That track no longer exists.")?;
-    let d = t.device_mut(&device).ok_or("That device no longer exists.")?;
-    if d.kind != "sampler" && d.kind != "drum-rack" {
+    let (_, chain) = session.project.chain_mut(&track).ok_or("That track no longer exists.")?;
+    let d = soniq_project::find_device_mut(chain, &device).ok_or("That device no longer exists.")?;
+    if !["sampler", "drum-rack", "convolution"].contains(&d.kind.as_str()) {
         return Err(format!("{} does not play samples.", d.name));
     }
     let label = format!("Load “{}” into {}", asset.name, d.name);
@@ -305,6 +307,12 @@ pub async fn device_load_sample(state: State<'_, AppState>, track: String, devic
     session.collect_garbage();
     state.sync_engine(session);
     Ok(state.reply(session))
+}
+
+/// A wavetable's waveforms, to draw them: one curve of `points` values per waveform.
+#[tauri::command]
+pub fn wavetable_shapes(table: usize, points: usize) -> Vec<Vec<f32>> {
+    soniq_dsp::table_shapes(table, points)
 }
 
 /// Where the hits in a sample start, as fractions of its length, so the

@@ -500,6 +500,9 @@ pub fn preset_save(state: State<'_, AppState>, owner: String, device: String, na
     for chain in &mut d.chains {
         chain.device.samples.clear();
     }
+    for inner in d.pad_chains.iter_mut().flat_map(|c| c.devices.iter_mut()).chain(d.fx_chains.iter_mut().flat_map(|c| c.devices.iter_mut())) {
+        inner.samples.clear();
+    }
     let presets = lock(&state.library).presets.clone();
     let folder = presets.join(safe_name(&d.name));
     fs::create_dir_all(&folder).map_err(|e| format!("Could not make the presets folder: {e}"))?;

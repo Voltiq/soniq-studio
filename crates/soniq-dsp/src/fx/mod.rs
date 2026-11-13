@@ -11,7 +11,9 @@ mod character;
 mod convolution;
 mod dynamics;
 mod eq;
+mod mix;
 mod modulation;
+mod rack;
 mod space;
 mod tone;
 mod vocoder;
@@ -21,12 +23,14 @@ pub use character::{AutoPan, PitchShifter, Redux};
 pub use convolution::Convolution;
 pub use dynamics::{Compressor, Gate, Limiter};
 pub use eq::{BAND_TYPES, BANDS, Eq};
+pub use mix::Mixed;
 pub use modulation::{AutoFilter, Chorus, Phaser};
+pub use rack::{FxRack, FxRackChain, RackFx};
 pub use space::{Delay, Reverb};
 pub use tone::{Saturator, Utility};
 pub use vocoder::Vocoder;
 
-use crate::{External, FxContext, Params};
+use crate::{External, FxContext, Params, SampleSlot};
 
 /// A sidechain key for one block: the left and right signal of the track it listens to.
 pub type Sidechain<'a> = Option<(&'a [f32], &'a [f32])>;
@@ -54,6 +58,10 @@ pub enum AudioFx {
     PitchShifter(PitchShifter),
     Convolution(Convolution),
     Vocoder(Vocoder),
+    /// Chains of effects side by side, with macros.
+    Rack(FxRack),
+    /// An effect with a Dry/Wet of the engine's making around it.
+    Mixed(Box<Mixed>),
     /// A plugin running in its own process.
     External(Box<dyn External>),
 }
@@ -85,8 +93,15 @@ pub const AUDIO_FX_TYPES: [&str; 20] = [
 impl AudioFx {
     /// The effect for a device type, or `None` if the type is not one.
     pub fn build(kind: &str, sample_rate: u32, p: &dyn Params) -> Option<Self> {
+        Self::build_with(kind, sample_rate, p, &[])
+    }
+
+    /// The effect for a device type, with the audio loaded into it (a
+    /// convolution reverb's own impulse response). An effect whose
+    /// parameters include `wet` gets that Dry/Wet around it.
+    pub fn build_with(kind: &str, sample_rate: u32, p: &dyn Params, samples: &[SampleSlot]) -> Option<Self> {
         let sr = sample_rate.max(1) as f32;
-        Some(match kind {
+        let fx = match kind {
             "eq" => Self::Eq(Eq::new(sr, p)),
             "comp" => Self::Compressor(Compressor::new(sr, p)),
             "gate" => Self::Gate(Gate::new(sr, p)),
@@ -105,10 +120,16 @@ impl AudioFx {
             "autopan" => Self::AutoPan(AutoPan::new(sr, p)),
             "redux" => Self::Redux(Redux::new(sr, p)),
             "pitch" => Self::PitchShifter(PitchShifter::new(sr, p)),
-            "convolution" => Self::Convolution(Convolution::new(sr, p)),
+            "convolution" => Self::Convolution(Convolution::new(sr, p, samples.first().map(|s| &s.buffer))),
             "vocoder" => Self::Vocoder(Vocoder::new(sr, p)),
             _ => return None,
-        })
+        };
+        Some(fx.with_wet(sr, p))
+    }
+
+    /// This effect with a Dry/Wet around it, when its parameters have one (`wet`).
+    pub fn with_wet(self, sr: f32, p: &dyn Params) -> Self {
+        if p.get("wet").is_some() && !matches!(self, Self::Mixed(_)) { Self::Mixed(Box::new(Mixed::new(self, sr, p))) } else { self }
     }
 
     /// Processes one block in place. `sidechain` is the key signal for the
@@ -139,6 +160,8 @@ impl AudioFx {
             Self::PitchShifter(fx) => fx.process(left, right),
             Self::Convolution(fx) => fx.process(left, right),
             Self::Vocoder(fx) => fx.process(left, right, sidechain),
+            Self::Rack(fx) => fx.process(left, right, sidechain, ctx),
+            Self::Mixed(fx) => fx.process(left, right, sidechain, ctx),
             Self::External(fx) => fx.process(ctx, left, right, &[]),
         }
     }
@@ -153,6 +176,7 @@ impl AudioFx {
             Self::Limiter(fx) => Some(fx.reduction()),
             Self::Glue(fx) => Some(fx.reduction()),
             Self::DeEsser(fx) => Some(db(fx.gain())),
+            Self::Mixed(fx) => fx.reduction(),
             _ => None,
         }
     }
@@ -181,6 +205,8 @@ impl AudioFx {
             Self::PitchShifter(fx) => fx.configure(p),
             Self::Convolution(fx) => fx.configure(p),
             Self::Vocoder(fx) => fx.configure(p),
+            Self::Rack(fx) => fx.configure(p),
+            Self::Mixed(fx) => fx.configure(p),
             Self::External(fx) => fx.configure(p),
         }
     }
@@ -191,6 +217,7 @@ impl AudioFx {
         match self {
             Self::External(fx) => fx.latency(),
             Self::Eq(fx) => fx.latency(),
+            Self::Mixed(fx) => fx.latency(),
             _ => 0,
         }
     }
@@ -218,6 +245,8 @@ impl AudioFx {
             (Self::PitchShifter(new), Self::PitchShifter(old)) => new.adopt(old),
             (Self::Convolution(new), Self::Convolution(old)) => new.adopt(old),
             (Self::Vocoder(new), Self::Vocoder(old)) => new.adopt(old),
+            (Self::Rack(new), Self::Rack(old)) => new.adopt(old),
+            (Self::Mixed(new), Self::Mixed(old)) => new.adopt(old),
             _ => {}
         }
     }
@@ -245,6 +274,11 @@ impl Smooth {
     /// Heads for a new target from wherever it is.
     pub fn set(&mut self, target: f32) {
         self.target = target;
+    }
+
+    /// It is heading for `target` and as good as there.
+    pub fn settled_at(&self, target: f32) -> bool {
+        self.target == target && (self.value - target).abs() < 1e-4
     }
 
     /// Starts from where the old one had got to.

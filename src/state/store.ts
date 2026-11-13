@@ -1727,8 +1727,9 @@ export const useStore = create<Store>((set, get) => {
       const host = chainHost(s.project, owner);
       const spec = deviceSpec(type);
       if (!host || !spec) return;
-      if (host.kind === "pad" && spec.category !== "audio-fx") {
-        pushToast({ tone: "info", title: `${spec.name} goes on a track`, detail: "Drum pads and their returns take audio effects." });
+      if ((host.kind === "pad" || host.kind === "rack") && (spec.category !== "audio-fx" || type === "fx-rack")) {
+        const detail = host.kind === "pad" ? "Drum pads and their returns take audio effects." : "A rack's chains take audio effects, and no racks of their own.";
+        pushToast({ tone: "info", title: `${spec.name} goes on a track`, detail });
         return;
       }
       if (spec.category === "modulator") {

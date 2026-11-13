@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { backend } from "../engine/backend";
 import { engine } from "../engine/bridge";
-import { DEVICE_CATALOG, LIVE_TYPES, SIDECHAIN_TYPES, chainHost, chainParams, deviceSpec, isMidiFx, isModulator, padName } from "../state/devices";
+import { DEVICE_CATALOG, FX_RACK, LIVE_TYPES, SIDECHAIN_TYPES, chainHost, chainParams, deviceSpec, isMidiFx, isModulator, padName, rackedParams } from "../state/devices";
 import { noteName } from "../state/music";
 import { usePeaks } from "../state/peaks";
 import { useStore } from "../state/store";
@@ -15,6 +15,7 @@ import { Icon } from "./Icon";
 import { Popover } from "./Menu";
 import { PluginBody } from "./PluginPanel";
 import { SavePreset } from "./LibraryPanel";
+import { FxRackBody, IrSlot, WavetableBody } from "./SoundDesignPanels";
 import { trackColor, trackVar } from "./trackColor";
 import { Select } from "./Select";
 
@@ -359,7 +360,11 @@ function RackBody({ track, device }: { track: Owner; device: Device }) {
             ) : chainDevice.type === "sampler" ? (
               <SampleSlot track={track} device={chainDevice} />
             ) : null}
-            <ParamGroups track={track} device={chainDevice} params={panelParams(chainDevice)} mapping={mapping} />
+            {chainDevice.type === "wavetable" ? (
+              <WavetableBody track={track} device={chainDevice} mapping={mapping} />
+            ) : (
+              <ParamGroups track={track} device={chainDevice} params={panelParams(chainDevice)} mapping={mapping} />
+            )}
           </div>
         </div>
       ) : (
@@ -383,7 +388,8 @@ function RackBody({ track, device }: { track: Owner; device: Device }) {
 /** Devices that turn the sound down, and show by how much. */
 const REDUCING = new Set(["comp", "gate", "limiter", "glue", "deesser"]);
 
-function DeviceCard({ track, device }: { track: Owner; device: Device }) {
+/** `mapping`: inside an effect rack's chain, where knobs map to the rack's macros. */
+function DeviceCard({ track, device, mapping }: { track: Owner; device: Device; mapping?: Mapping }) {
   const { toggleDevice, removeDevice } = useStore.getState();
   const [presetAnchor, setPresetAnchor] = useState<HTMLElement | null>(null);
   // Effects inside a Drum Rack have no meters of their own.
@@ -433,6 +439,15 @@ function DeviceCard({ track, device }: { track: Owner; device: Device }) {
         <PluginBody track={track} device={device} />
       ) : device.type === "rack" ? (
         <RackBody track={track} device={device} />
+      ) : device.type === FX_RACK ? (
+        <FxRackBody track={track} device={device} />
+      ) : device.type === "wavetable" ? (
+        <WavetableBody track={track} device={device} />
+      ) : device.type === "convolution" ? (
+        <div className="dev-row dyn-row">
+          <IrSlot track={track} device={device} />
+          <ParamGroups track={track} device={device} params={params} mapping={mapping} />
+        </div>
       ) : device.type === "eq" ? (
         <EqEditor track={track} device={device} />
       ) : device.type === "drum-rack" || device.type === "sampler" ? (
@@ -449,12 +464,12 @@ function DeviceCard({ track, device }: { track: Owner; device: Device }) {
         <div className="dev-row dyn-row">
           <div className="dyn-side">
             {device.type !== "vocoder" && <DynamicsCurve device={device} />}
-            <SidechainPicker track={track} device={device} />
+            {!nested && <SidechainPicker track={track} device={device} />}
           </div>
-          <ParamGroups track={track} device={device} params={params} />
+          <ParamGroups track={track} device={device} params={params} mapping={mapping} />
         </div>
       ) : (
-        <ParamGroups track={track} device={device} params={params} />
+        <ParamGroups track={track} device={device} params={params} mapping={mapping} />
       )}
     </section>
   );
@@ -551,7 +566,7 @@ function InputPicker({ track }: { track: Track }) {
   );
 }
 
-const HOST_KINDS = { midi: "MIDI track", audio: "Audio track", group: "Group track", return: "Return track", master: "Master", pad: "Drum Rack" } as const;
+const HOST_KINDS = { midi: "MIDI track", audio: "Audio track", group: "Group track", return: "Return track", master: "Master", pad: "Drum Rack", rack: "Effect rack chain" } as const;
 
 /** What a modulator moves: a parameter of another device on its track. */
 function ModTargetPicker({ track, device }: { track: Owner; device: Device }) {
@@ -636,12 +651,24 @@ export function DeviceChain() {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [dropping, setDropping] = useState(false);
   if (!host) return null;
-  // Instruments with two rows of controls (or pads) and the EQ get a taller panel.
-  const tall = host.devices.some((d) => ["synth", "sampler", "drum-rack", "rack", "eq"].includes(d.type));
+  // Instruments with two rows of controls (or pads), racks and the EQ get a taller panel.
+  const tall = host.devices.some((d) => ["synth", "wavetable", "sampler", "drum-rack", "rack", FX_RACK, "eq"].includes(d.type));
+  const inside = host.kind === "pad" || host.kind === "rack";
+  const run = useStore.getState().run;
+  // Inside an effect rack's chain, knobs map to the rack's macros, and mapped ones show what their macro makes of them.
+  const racked = host.rack;
+  const rackMacros = racked?.device.macros ?? [];
+  const shown = (d: Device): Device => (racked ? { ...d, params: rackedParams(racked.device, racked.chain.id, d) } : d);
+  const mappingOf = (d: Device): Mapping | undefined =>
+    racked && {
+      macroOf: (id) => rackMacros.find((m) => m.chain === racked.chain.id && m.device === d.id && m.param === id)?.index,
+      count: (index) => rackMacros.filter((m) => m.index === index).length,
+      map: (param, index) => void run({ op: "mapMacro", track: racked.owner, device: racked.device.id, chain: racked.chain.id, inner: d.id, param: param.id, index }),
+    };
 
   // Only MIDI tracks host instruments and MIDI effects; modulators go on tracks.
   const onTrack = host.kind === "midi" || host.kind === "audio" || host.kind === "group";
-  const options = DEVICE_CATALOG.filter((d) => d.category === "audio-fx" || (d.category === "modulator" ? onTrack : host.kind === "midi"));
+  const options = DEVICE_CATALOG.filter((d) => (d.category === "audio-fx" ? !(inside && d.type === FX_RACK) : d.category === "modulator" ? onTrack : host.kind === "midi"));
   const onDrop = (e: DragEvent) => {
     setDropping(false);
     const type = e.dataTransfer.getData(DEVICE_DRAG_TYPE);
@@ -681,6 +708,12 @@ export function DeviceChain() {
             Back to the Drum Rack
           </button>
         )}
+        {racked && (
+          <button className="btn sm" type="button" onClick={() => selectChain(racked.owner)}>
+            <Icon name="chevronRight" size={13} className="flip" />
+            Back to the rack
+          </button>
+        )}
         <span className="tdot" style={{ background: host.color ? trackVar(host.color) : "var(--text-3)" }} />
         <h2 className="pt">{host.name}</h2>
         <span className="muted">
@@ -709,10 +742,15 @@ export function DeviceChain() {
               : "Effects here change this pad only. Add one from the browser or with Add device."}
           </p>
         )}
+        {racked && host.devices.length === 0 && (
+          <p className="muted pad-chain-empty">
+            This chain has no effects yet: it passes the sound through, dry, beside the rack's other chains. Add effects from the browser or with Add device; right-click a knob to map it to a macro.
+          </p>
+        )}
         {host.devices.map((d, i) => (
           <div key={d.id} className="chain-item">
             {i > 0 && <Icon name="chevronRight" size={14} className="chain-arrow" />}
-            <DeviceCard track={host} device={d} />
+            <DeviceCard track={host} device={shown(d)} mapping={mappingOf(d)} />
           </div>
         ))}
         <button className="dev-add" type="button" aria-haspopup="menu" onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}>

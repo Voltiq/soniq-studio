@@ -131,12 +131,36 @@ pub fn device(kind: &str, overrides: &[(&str, f64)]) -> Option<Device> {
         plugin: None,
         state: None,
         pad_chains: Vec::new(),
+        fx_chains: Vec::new(),
     })
+}
+
+/// The Dry/Wet the engine puts around an effect that has no mix of its own
+/// (parameter `wet`): built-in effects get it from the catalog, plugins from here.
+pub fn wet_param() -> DeviceParam {
+    DeviceParam {
+        id: "wet".into(),
+        label: "Dry/Wet".into(),
+        value: 100.0,
+        min: 0.0,
+        max: 100.0,
+        default: 100.0,
+        unit: "%".into(),
+        log: None,
+        bipolar: None,
+        step: None,
+        options: None,
+        group: None,
+    }
 }
 
 /// Brings a device saved by an older version up to date: parameters added
 /// since then appear at their defaults, removed ones go, values are kept.
 pub fn refresh(device: &mut Device) {
+    // A plugin's controls are its own; a plugin effect also has the engine's Dry/Wet.
+    if device.kind == crate::PLUGIN_TYPE && device.role == DeviceRole::Effect && !device.params.iter().any(|p| p.id == "wet") {
+        device.params.push(wet_param());
+    }
     let Some(spec) = spec(&device.kind) else { return };
     let old = std::mem::take(&mut device.params);
     device.params = spec

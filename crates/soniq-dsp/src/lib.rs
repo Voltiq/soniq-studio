@@ -17,6 +17,7 @@ mod rack;
 mod sampler;
 mod synth;
 mod warp;
+mod wavetable;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -27,12 +28,13 @@ pub use common::Wave;
 pub use drums::{BUILT_IN, DrumRack, FIRST_PAD, PAD_NAMES, PADS, PadChains, PadFx};
 pub use epiano::EPiano;
 pub use external::External;
-pub use fx::{AUDIO_FX_TYPES, AudioFx, BAND_TYPES, BANDS, Compressor, Limiter, Sidechain};
+pub use fx::{AUDIO_FX_TYPES, AudioFx, BAND_TYPES, BANDS, Compressor, FxRack, FxRackChain, Limiter, RackFx, Sidechain};
 pub use midifx::{BlockEvent, FxContext, Key, MIDI_FX_TYPES, MidiFx, push_event, sort_events};
 pub use rack::{MacroLink, Rack, RackLayer};
 pub use sampler::{MAX_SLICES, Sampler};
 pub use synth::Synth;
 pub use warp::{WarpClock, WarpMode, Warper};
+pub use wavetable::{TABLE_NAMES, Wavetable, table_shapes};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NoteEvent {
@@ -122,6 +124,7 @@ pub struct SampleSlot {
 #[allow(clippy::large_enum_variant)]
 pub enum Instrument {
     Synth(Synth),
+    Wavetable(Wavetable),
     EPiano(EPiano),
     Sampler(Sampler),
     Drums(DrumRack),
@@ -131,7 +134,7 @@ pub enum Instrument {
 }
 
 /// Device types that make sound from notes.
-pub const INSTRUMENT_TYPES: [&str; 5] = ["synth", "epiano", "sampler", "drum-rack", "rack"];
+pub const INSTRUMENT_TYPES: [&str; 6] = ["synth", "wavetable", "epiano", "sampler", "drum-rack", "rack"];
 
 impl Instrument {
     /// The instrument for a device type, or `None` if the type is not one.
@@ -140,6 +143,7 @@ impl Instrument {
         let sr = sample_rate.max(1) as f32;
         Some(match kind {
             "synth" => Self::Synth(Synth::new(sr, params)),
+            "wavetable" => Self::Wavetable(Wavetable::new(sr, params)),
             "epiano" => Self::EPiano(EPiano::new(sr, params)),
             "sampler" => {
                 let slot = samples.first();
@@ -155,6 +159,7 @@ impl Instrument {
     pub fn configure(&mut self, params: &dyn Params) {
         match self {
             Self::Synth(i) => i.configure(params),
+            Self::Wavetable(i) => i.configure(params),
             Self::EPiano(i) => i.configure(params),
             Self::Sampler(i) => i.configure(params),
             Self::Drums(i) => i.configure(params),
@@ -166,6 +171,7 @@ impl Instrument {
     pub fn handle(&mut self, event: NoteEvent) {
         match self {
             Self::Synth(i) => i.handle(event),
+            Self::Wavetable(i) => i.handle(event),
             Self::EPiano(i) => i.handle(event),
             Self::Sampler(i) => i.handle(event),
             Self::Drums(i) => i.handle(event),
@@ -181,6 +187,7 @@ impl Instrument {
         let (left, right) = (&mut left[..n], &mut right[..n]);
         match self {
             Self::Synth(i) => i.render(left, right),
+            Self::Wavetable(i) => i.render(left, right),
             Self::EPiano(i) => i.render(left, right),
             Self::Sampler(i) => i.render(left, right),
             Self::Drums(i) => i.render(left, right),
@@ -202,6 +209,7 @@ impl Instrument {
     pub fn adopt(&mut self, old: &mut Instrument) {
         match (self, old) {
             (Self::Synth(new), Self::Synth(old)) => new.adopt(old),
+            (Self::Wavetable(new), Self::Wavetable(old)) => new.adopt(old),
             (Self::EPiano(new), Self::EPiano(old)) => new.adopt(old),
             (Self::Sampler(new), Self::Sampler(old)) => new.adopt(old),
             (Self::Drums(new), Self::Drums(old)) => new.adopt(old),
@@ -222,6 +230,7 @@ impl Instrument {
     pub fn is_silent(&self) -> bool {
         match self {
             Self::Synth(i) => i.is_silent(),
+            Self::Wavetable(i) => i.is_silent(),
             Self::EPiano(i) => i.is_silent(),
             Self::Sampler(i) => i.is_silent(),
             Self::Drums(i) => i.is_silent(),

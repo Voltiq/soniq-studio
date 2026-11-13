@@ -8,7 +8,7 @@ use crate::{Instrument, NoteEvent, ParamBank, Params};
 const SCRATCH: usize = 1024;
 
 /// The rack's macro parameters, by index.
-const MACRO_IDS: [&str; 8] = ["macro1", "macro2", "macro3", "macro4", "macro5", "macro6", "macro7", "macro8"];
+pub(crate) const MACRO_IDS: [&str; 8] = ["macro1", "macro2", "macro3", "macro4", "macro5", "macro6", "macro7", "macro8"];
 
 /// A macro turning one parameter of a chain's instrument (mirrors `MacroMap`).
 #[derive(Debug, Clone, Copy)]
@@ -28,7 +28,7 @@ pub struct MacroLink {
 }
 
 impl MacroLink {
-    fn value(&self, amount: f64) -> f64 {
+    pub(crate) fn value(&self, amount: f64) -> f64 {
         let t = amount.clamp(0.0, 1.0);
         let v = if self.log && self.from > 0.0 && self.to > 0.0 { self.from * (self.to / self.from).powf(t) } else { self.from + (self.to - self.from) * t };
         let v = match self.step.filter(|s| *s > 0.0) {

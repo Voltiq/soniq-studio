@@ -181,6 +181,7 @@ pub fn run() {
             midi::device_load_sample,
             midi::midi_capture,
             midi::sample_onsets,
+            midi::wavetable_shapes,
             midi::midi_learn,
             midi::midi_simulate,
             commands::input_status,

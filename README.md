@@ -45,8 +45,10 @@ Releases are built by GitHub Actions from a version tag: see [RELEASING.md](RELE
   pan, mute, solo, master fader, a sample-accurate loop and a metronome. Meters and the playhead are
   streamed from the engine.
 - **Instruments.** MIDI tracks play through a built-in instrument: **Soniq Synth** (two oscillators and a
-  sub, unison, filter with drive, two envelopes, LFO and vibrato, poly/mono/legato with glide), **Electric
-  Piano**, **Sampler** (classic, one-shot, loop, or sliced: equal pieces or at the transients, one key
+  sub, unison, filter with drive, two envelopes, LFO and vibrato, poly/mono/legato with glide),
+  **Wavetable** (two oscillators sweeping through tables of waveforms, and a modulation matrix: eight
+  slots that send an envelope, an LFO, velocity, the key or a random value to a position, pitch, the
+  filter, a level or the pan), **Electric Piano**, **Sampler** (classic, one-shot, loop, or sliced: equal pieces or at the transients, one key
   per slice, "To clip" writes the slices out as a MIDI clip; plus an LFO) and **Drum Rack** (64 pads in four
   pages with a built-in kit and percussion; drop your own samples on any pad, give each pad its own
   effects and sends into the rack's two returns). The **Instrument Rack** layers instruments or splits
@@ -68,6 +70,10 @@ Releases are built by GitHub Actions from a version tag: see [RELEASING.md](RELE
 - **Session recording.** An armed track's empty slots are record buttons (or right-click any empty
   slot › Record here): the clip stops on the bar line, loops in time and plays on. Right-click a scene to
   write its clips into the arrangement at the playhead.
+- **Effect racks and Dry/Wet.** The Audio Effect Rack runs chains of effects side by side, each with
+  its level and pan (a chain without effects is the dry sound), with eight macros: open a chain and
+  right-click a knob to map it. Every effect has a Dry/Wet. Drop an audio file on a Convolution Reverb
+  to use it as the impulse response.
 - **Clips.** An audio clip can play backwards (Reverse on the clip toolbar) and at another pitch (−24
   to +24 semitones, same length). With the Automation tool (A), click on a clip to draw its gain over
   time: click adds a point, double-click removes it.
@@ -222,7 +228,7 @@ crates/soniq-project   project model, ops, markers, notes, tempo map, undo histo
                        to snapshot)
 crates/soniq-io        decode, resample, peaks, edits, effects, generators, spectral tools, loudness,
                        transient and tempo detection, export to WAV, FLAC, MP3, OGG and Opus
-crates/soniq-dsp       instruments (synth, electric piano, sampler, drum rack, instrument rack), MIDI
+crates/soniq-dsp       instruments (synth, wavetable, electric piano, sampler, drum rack, instrument rack), MIDI
                        effects and audio effects, all retunable in place; warping (time-stretch)
 crates/soniq-midi      MIDI inputs and controllers (midir) and Standard MIDI Files (midly)
 crates/soniq-host      CLAP and VST3 plugin hosting: each plugin in a sandbox process (the app started

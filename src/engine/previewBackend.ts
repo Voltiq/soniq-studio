@@ -230,6 +230,7 @@ function reduce(p: Project, op: Op): { project: Project; label: string; created?
         label: "Device parameter",
       };
     case "addChain": {
+      if (!op.kind) throw new Error("Audio effect racks need the desktop app (npm run tauri dev).");
       const spec = DEVICE_CATALOG.find((d) => d.type === op.kind);
       if (!spec || spec.role !== "instrument" || op.kind === "rack") throw new Error(`${spec?.name ?? op.kind} can't go in a rack chain`);
       const device = { ...createDevice(op.kind), id: newId("dev") };
@@ -704,6 +705,8 @@ export function createPreviewBackend(): Backend {
     midiExport: desktopOnly,
     loadSample: desktopOnly,
     sampleOnsets: async () => [0],
+    // The browser preview has no tables: a sine stands in for every waveform.
+    wavetableShapes: async (_table, points) => Array.from({ length: 16 }, () => Array.from({ length: points }, (_, i) => Math.sin((i / points) * Math.PI * 2))),
     warpClip: async () => {
       throw new Error("Finding a clip's tempo needs the desktop app (npm run tauri dev).");
     },

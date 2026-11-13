@@ -15,11 +15,23 @@ const VOICE_GAIN: f32 = 0.22;
 const MAX_SPREAD: f32 = 0.3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FilterKind {
+pub(crate) enum FilterKind {
     Lp24,
     Lp12,
     Bp,
     Hp,
+}
+
+impl FilterKind {
+    /// The option index of a `filter` parameter.
+    pub(crate) fn from_index(v: f64) -> Self {
+        match v.round() as i64 {
+            1 => Self::Lp12,
+            2 => Self::Bp,
+            3 => Self::Hp,
+            _ => Self::Lp24,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,12 +83,7 @@ impl Settings {
             sub: pct("sub", 0.0),
             unison: (p.or("unison", 1.0).round() as usize).clamp(1, MAX_UNISON),
             spread: pct("spread", 30.0),
-            filter: match p.or("filter", 0.0).round() as i64 {
-                1 => FilterKind::Lp12,
-                2 => FilterKind::Bp,
-                3 => FilterKind::Hp,
-                _ => FilterKind::Lp24,
-            },
+            filter: FilterKind::from_index(p.or("filter", 0.0)),
             cutoff: p.or("cutoff", 2200.0) as f32,
             res: pct("res", 22.0),
             drive: db_gain(p.or("drive", 0.0)),
@@ -334,7 +341,7 @@ impl Synth {
     }
 }
 
-fn filter(stages: &mut [Svf; 2], c: &SvfCoef, c2: &SvfCoef, kind: FilterKind, x: f32) -> f32 {
+pub(crate) fn filter(stages: &mut [Svf; 2], c: &SvfCoef, c2: &SvfCoef, kind: FilterKind, x: f32) -> f32 {
     match kind {
         FilterKind::Lp24 => {
             let (low, _, _) = stages[0].tick(c, x);

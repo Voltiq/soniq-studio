@@ -8066,3 +8066,177 @@ button.select.sbox[aria-expanded="true"] .i.sbox-chev {
   outline: 1.5px dashed var(--accent);
   outline-offset: 1px;
 }
+
+/* ---------- Wavetable ---------- */
+
+.wt {
+  gap: 10px;
+}
+
+.wt-side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: flex-end;
+}
+
+.wt-wave {
+  position: relative;
+  padding: 4px 6px 8px;
+  border-radius: 10px;
+  background: var(--surface-1);
+  box-shadow: var(--inset-lo);
+}
+
+.wt-wave svg {
+  display: block;
+}
+
+.wt-wave.is-silent svg {
+  opacity: 0.35;
+}
+
+.wt-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.wt-zero {
+  stroke: var(--line-2);
+  stroke-width: 1;
+}
+
+.wt-tag {
+  position: absolute;
+  top: 3px;
+  left: 7px;
+  font: 600 10px var(--mono);
+  color: var(--text-3);
+}
+
+/* Where the oscillator is in its table. */
+.wt-pos {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--line-2);
+}
+
+.wt-pos span {
+  position: absolute;
+  top: -1px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.wt-matrix {
+  flex: none;
+  align-self: flex-end;
+}
+
+.wt-rows {
+  display: grid;
+  grid-template-rows: repeat(4, auto);
+  grid-auto-flow: column;
+  gap: 3px 14px;
+}
+
+.wt-slot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wt-slot .select {
+  height: 24px;
+  font-size: 11px;
+  padding: 0 20px 0 7px;
+}
+
+.wt-slot .selwrap:first-child .select {
+  width: 96px;
+}
+
+.wt-slot .selwrap:nth-child(3) .select {
+  width: 118px;
+}
+
+.wt-slot .selwrap .i {
+  right: 5px;
+}
+
+.wt-slot .range {
+  width: 70px;
+}
+
+.wt-slot.is-off .selwrap:nth-child(3),
+.wt-slot.is-off .range,
+.wt-slot.is-off .wt-amt {
+  opacity: 0.4;
+}
+
+.wt-amt {
+  width: 58px;
+  font-size: 10.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* ---------- Audio effect rack ---------- */
+
+.fx-rack .rack-chains {
+  width: 264px;
+}
+
+.fx-rack .rack-list {
+  overflow-x: hidden;
+}
+
+/* The summary shortens instead of widening the row. */
+.fx-rack .rack-chain-name {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.fx-chain-sum {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.fx-chain-edit {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+
+.fx-chain-name {
+  width: 132px;
+}
+
+.fx-chain-edit .btn {
+  gap: 4px;
+}
+
+/* ---------- Impulse response ---------- */
+
+.ir-slot .smp-wave {
+  display: flex;
+  align-items: center;
+  text-align: center;
+}

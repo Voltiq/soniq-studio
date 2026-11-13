@@ -217,7 +217,7 @@ export function EqEditor({ track, device }: { track: Owner; device: Device }) {
           return <ParamControl key={p.id} track={track} device={device} param={p} size={30} />;
         })}
         {device.params
-          .filter((p) => p.id === "output")
+          .filter((p) => p.id === "output" || p.id === "wet")
           .map((p) => (
             <ParamControl key={p.id} track={track} device={device} param={p} size={30} />
           ))}

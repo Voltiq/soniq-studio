@@ -152,6 +152,8 @@ export interface Backend {
   loadSample(track: string, device: string, key: number, path: string): Promise<ProjectReply>;
   /** Where the hits in a sample start, as fractions of its length (sensitivity 0–100). */
   sampleOnsets(asset: string, sensitivity: number): Promise<number[]>;
+  /** A wavetable's waveforms, to draw them: one curve of `points` values (about −1.6…1.6) per waveform. */
+  wavetableShapes(table: number, points: number): Promise<number[][]>;
   /** Warps an audio clip to the song, finding its own tempo first; the reply's note says what it found. */
   warpClip(clip: string, mode?: WarpMode): Promise<ProjectReply>;
   /** A new MIDI track playing an audio clip's slices: at its transients, or every `division` beats. */
@@ -293,6 +295,7 @@ const desktop: Backend = {
   midiExport: (path, clip) => invoke("midi_export", { path, clip: clip ?? null }),
   loadSample: (track, device, key, path) => invoke("device_load_sample", { track, device, key, path }),
   sampleOnsets: (asset, sensitivity) => invoke("sample_onsets", { asset, sensitivity }),
+  wavetableShapes: (table, points) => invoke("wavetable_shapes", { table, points }),
   warpClip: (clip, mode) => invoke("clip_warp", { clip, mode: mode ?? null }),
   sliceToMidi: (clip, division) => invoke("slice_to_midi", { clip, division }),
   pluginsList: (rescan) => invoke("plugins_list", { rescan }),

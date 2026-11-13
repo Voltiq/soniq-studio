@@ -490,7 +490,7 @@ impl AppState {
                     if track.kind == TrackKind::Midi {
                         node.instrument = instrument_node(track, pool, &timeline, song_key, &plugin);
                     }
-                    node.fx = fx_chain(&track.devices, rate as u32, &index, &plugin);
+                    node.fx = fx_chain(&track.devices, rate as u32, &index, &plugin, pool);
                     node.slots = slot_nodes(track, pool, &timeline);
                 }
                 // A silent track sends nothing, before or after its fader.
@@ -509,9 +509,9 @@ impl AppState {
         graph.returns = project
             .returns
             .iter()
-            .map(|r| ReturnNode::new(track_key(&r.id), track_gains(r.volume, r.pan, !r.mute), r.pre_fader, fx_chain(&r.devices, rate as u32, &index, &plugin), meter(&r.id)))
+            .map(|r| ReturnNode::new(track_key(&r.id), track_gains(r.volume, r.pan, !r.mute), r.pre_fader, fx_chain(&r.devices, rate as u32, &index, &plugin, pool), meter(&r.id)))
             .collect();
-        graph.master_fx = fx_chain(&project.master_devices, rate as u32, &index, &plugin);
+        graph.master_fx = fx_chain(&project.master_devices, rate as u32, &index, &plugin, pool);
         // Dynamics devices show how far they turn the sound down.
         if live_meters {
             for node in graph.fx_nodes_mut().filter(|n| n.fx.reduction().is_some()) {

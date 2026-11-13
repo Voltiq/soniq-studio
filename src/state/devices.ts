@@ -1,5 +1,5 @@
 import catalog from "../../shared/device-catalog.json";
-import { MASTER, type AutoTarget, type Chain, type Device, type DeviceParam, type DeviceRole, type MacroMap, type Project } from "./types";
+import { MASTER, type AutoTarget, type Chain, type Device, type DeviceParam, type DeviceRole, type FxChain, type MacroMap, type Project } from "./types";
 
 type ParamSpec = Omit<DeviceParam, "value">;
 
@@ -48,19 +48,30 @@ export const SIDECHAIN_TYPES = new Set(["comp", "gate", "vocoder"]);
 export interface ChainHost {
   id: string;
   name: string;
-  kind: "midi" | "audio" | "group" | "return" | "master" | "pad";
+  kind: "midi" | "audio" | "group" | "return" | "master" | "pad" | "rack";
   devices: Device[];
   /** Track colour; 0 for returns and the master. */
   color: number;
+  /** For a chain of an audio effect rack: the rack, the chain that holds it, and the chain itself. */
+  rack?: { owner: string; device: Device; chain: FxChain };
 }
+
+/** The type of an audio effect rack (mirrors `FX_RACK`). */
+export const FX_RACK = "fx-rack";
 
 /** The chain with this owner id (a track, a return, or MASTER). */
 export function chainHost(project: Project, id: string | null): ChainHost | null {
   if (!id) return null;
-  // A Drum Rack pad's effects, or one of its returns: "track/device/key".
+  // A chain inside a device, "owner/device/key": a Drum Rack pad's effects or one of its returns, or a chain of an effect rack.
   const parts = id.split("/");
   if (parts.length === 3) {
     const [t, d, key] = parts;
+    const outer = chainHost(project, t);
+    const fxRack = outer?.devices.find((x) => x.id === d && x.type === FX_RACK);
+    if (outer && fxRack) {
+      const chain = fxRack.fxChains?.find((c) => c.id === key);
+      return chain ? { id, name: `${outer.name} · ${fxRack.name} · ${chain.name}`, kind: "rack", devices: chain.devices, color: outer.color, rack: { owner: t, device: fxRack, chain } } : null;
+    }
     const track = project.tracks.find((x) => x.id === t);
     const rack = track?.devices.find((x) => x.id === d && x.type === "drum-rack");
     if (!track || !rack) return null;
@@ -166,6 +177,16 @@ export function macroAmount(map: MacroMap, p: DeviceParam, value: number): numbe
 export function chainParams(rack: Device, chain: Chain): DeviceParam[] {
   return chain.device.params.map((p) => {
     const map = rack.macros?.find((m) => m.chain === chain.id && m.param === p.id);
+    if (!map) return p;
+    const amount = (rack.params.find((q) => q.id === `macro${map.index + 1}`)?.value ?? 0) / 100;
+    return { ...p, value: macroValue(map, p, amount) };
+  });
+}
+
+/** An effect's parameters as its rack chain plays them: mapped ones follow their macro. */
+export function rackedParams(rack: Device, chain: string, device: Device): DeviceParam[] {
+  return device.params.map((p) => {
+    const map = rack.macros?.find((m) => m.chain === chain && m.device === device.id && m.param === p.id);
     if (!map) return p;
     const amount = (rack.params.find((q) => q.id === `macro${map.index + 1}`)?.value ?? 0) / 100;
     return { ...p, value: macroValue(map, p, amount) };

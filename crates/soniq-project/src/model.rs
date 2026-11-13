@@ -121,15 +121,23 @@ pub enum ChainOwner {
     Master,
     /// A Drum Rack pad's effects, or one of the rack's returns.
     Pad,
+    /// A chain of an audio effect rack.
+    Rack,
 }
 
-/// A chain inside a Drum Rack, addressed as `track/device/key`: the key is
-/// a pad's note ("36"–"99") or "A" / "B" for the rack's two returns.
-pub fn pad_path(owner: &str) -> Option<(&str, &str, &str)> {
+/// The device type of an audio effect rack.
+pub const FX_RACK: &str = "fx-rack";
+
+/// A chain inside a device, addressed as `owner/device/key`. In a Drum Rack
+/// the key is a pad's note ("36"–"99") or "A" / "B" for the rack's two
+/// returns; in an audio effect rack it is the chain's id.
+pub fn nested_path(owner: &str) -> Option<(&str, &str, &str)> {
     let mut parts = owner.splitn(3, '/');
-    let (track, device, key) = (parts.next()?, parts.next()?, parts.next()?);
-    let valid = key == "A" || key == "B" || key.parse::<u8>().is_ok_and(|n| (36..=99).contains(&n));
-    valid.then_some((track, device, key))
+    Some((parts.next()?, parts.next()?, parts.next()?))
+}
+
+fn pad_key(key: &str) -> bool {
+    key == "A" || key == "B" || key.parse::<u8>().is_ok_and(|n| (36..=99).contains(&n))
 }
 
 /// A device in a chain, or the instrument of one of its instrument racks.
@@ -708,6 +716,30 @@ pub struct Device {
     /// A Drum Rack's pad effect chains and its two returns.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pad_chains: Vec<PadChain>,
+    /// An audio effect rack's chains: effects side by side.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fx_chains: Vec<FxChain>,
+}
+
+/// One chain of an audio effect rack: it hears the rack's input, runs it
+/// through its effects in order, and joins the other chains at its level and pan.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FxChain {
+    pub id: String,
+    pub name: String,
+    pub on: bool,
+    /// Level in dB.
+    pub volume: f64,
+    /// −1 (left) … 1 (right).
+    pub pan: f64,
+    pub devices: Vec<Device>,
+}
+
+impl FxChain {
+    pub fn new(name: String) -> Self {
+        Self { id: crate::new_id("ch"), name, on: true, volume: 0.0, pan: 0.0, devices: Vec::new() }
+    }
 }
 
 /// A Drum Rack pad's own audio effects, or one of the rack's two returns
@@ -749,6 +781,23 @@ impl Device {
     /// This device and the instruments in its chains.
     pub fn with_inner(&self) -> impl Iterator<Item = &Device> {
         std::iter::once(self).chain(self.chains.iter().map(|c| &c.device))
+    }
+
+    /// This device and every device inside it: rack instruments, pad effects, effect rack chains.
+    pub fn with_nested(&self) -> impl Iterator<Item = &Device> {
+        let pads = self.pad_chains.iter().flat_map(|c| c.devices.iter());
+        let racked = self.fx_chains.iter().flat_map(|c| c.devices.iter());
+        self.with_inner().chain(pads).chain(racked)
+    }
+
+    /// A parameter of an effect in one of an effect rack's chains as the rack
+    /// plays it: a macro mapped to it overrides its own value.
+    pub fn fx_chain_param(&self, chain: &str, device: &Device, id: &str) -> Option<f64> {
+        let p = device.params.iter().find(|p| p.id == id)?;
+        Some(match self.macros.iter().find(|m| m.chain == chain && m.device.as_deref() == Some(device.id.as_str()) && m.param == id) {
+            Some(m) => m.value(p, self.param(&format!("macro{}", m.index + 1)).unwrap_or(0.0) / 100.0),
+            None => p.value,
+        })
     }
 
     /// A chain instrument's parameter as the rack plays it: a macro mapped
@@ -807,6 +856,9 @@ pub struct MacroMap {
     /// 0 … MACROS − 1.
     pub index: u8,
     pub chain: String,
+    /// In an audio effect rack: the effect in the chain whose parameter it turns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
     pub param: String,
     /// The parameter's value with the macro at 0 % and at 100 %.
     pub min: f64,
@@ -990,9 +1042,13 @@ impl Project {
 
     /// The device chain of a track, a return track, or the master ([`MASTER`]).
     pub fn chain(&self, owner: &str) -> Option<&[Device]> {
-        if let Some((track, device, key)) = pad_path(owner) {
-            let rack = self.track(track)?.devices.iter().find(|d| d.id == device && d.kind == "drum-rack")?;
-            return Some(rack.pad_chains.iter().find(|c| c.key == key).map_or(&[][..], |c| c.devices.as_slice()));
+        if let Some((host, device, key)) = nested_path(owner) {
+            let rack = self.chain(host)?.iter().find(|d| d.id == device)?;
+            return match rack.kind.as_str() {
+                "drum-rack" if pad_key(key) => Some(rack.pad_chains.iter().find(|c| c.key == key).map_or(&[][..], |c| c.devices.as_slice())),
+                FX_RACK => rack.fx_chains.iter().find(|c| c.id == key).map(|c| c.devices.as_slice()),
+                _ => None,
+            };
         }
         if owner == MASTER {
             return Some(&self.master_devices);
@@ -1005,9 +1061,15 @@ impl Project {
 
     /// The device chain of a track, a return track or the master, and what holds it.
     pub fn chain_mut(&mut self, owner: &str) -> Option<(ChainOwner, &mut Vec<Device>)> {
-        if let Some((track, device, key)) = pad_path(owner) {
-            let track = self.tracks.iter_mut().find(|t| t.id == track)?;
-            let rack = track.devices.iter_mut().find(|d| d.id == device && d.kind == "drum-rack")?;
+        if let Some((host, device, key)) = nested_path(owner) {
+            let (_, devices) = self.chain_mut(host)?;
+            let rack = devices.iter_mut().find(|d| d.id == device)?;
+            if rack.kind == FX_RACK {
+                return rack.fx_chains.iter_mut().find(|c| c.id == key).map(|c| (ChainOwner::Rack, &mut c.devices));
+            }
+            if rack.kind != "drum-rack" || !pad_key(key) {
+                return None;
+            }
             let at = match rack.pad_chains.iter().position(|c| c.key == key) {
                 Some(at) => at,
                 None => {
@@ -1104,10 +1166,9 @@ impl Project {
     pub fn prune_assets(&mut self) {
         let takes = self.tracks.iter().flat_map(|t| t.takes.iter().flat_map(|l| l.clips.iter().filter_map(|c| c.asset())));
         let clips = self.tracks.iter().flat_map(|t| t.clips.iter().filter_map(|c| c.asset())).chain(takes);
-        let samples = self
-            .tracks
-            .iter()
-            .flat_map(|t| t.devices.iter().flat_map(Device::with_inner).flat_map(|d| d.samples.iter().map(|s| s.asset.as_str())));
+        // Samples anywhere: instruments, and impulse responses on returns, the master and inside racks.
+        let chains = self.tracks.iter().map(|t| &t.devices).chain(self.returns.iter().map(|r| &r.devices)).chain(std::iter::once(&self.master_devices));
+        let samples = chains.flat_map(|c| c.iter().flat_map(Device::with_nested).flat_map(|d| d.samples.iter().map(|s| s.asset.as_str())));
         let frozen = self.tracks.iter().filter_map(|t| t.frozen.as_deref());
         let used: std::collections::HashSet<String> = clips.chain(samples).chain(frozen).map(str::to_string).collect();
         self.assets.retain(|a| used.contains(&a.id));
@@ -1123,6 +1184,19 @@ impl Project {
             for chain in &mut device.pad_chains {
                 chain.devices.iter_mut().for_each(catalog::refresh);
             }
+            for chain in &mut device.fx_chains {
+                chain.devices.iter_mut().for_each(catalog::refresh);
+            }
+        }
+    }
+
+    /// Macros of effect racks whose chain or effect is gone go.
+    pub fn prune_macros(&mut self) {
+        for rack in self.chains_mut().filter(|d| d.kind == FX_RACK) {
+            let chains = &rack.fx_chains;
+            rack.macros.retain(|m| {
+                chains.iter().find(|c| c.id == m.chain).is_some_and(|c| c.devices.iter().any(|d| Some(d.id.as_str()) == m.device.as_deref() && d.params.iter().any(|p| p.id == m.param)))
+            });
         }
     }
 
